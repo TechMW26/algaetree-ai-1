@@ -6,6 +6,8 @@ import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import { useConversation } from "@elevenlabs/react";
 import { useLiveData } from "../hooks/useLiveData";
+import { useVisionDetection, buildGestureContext } from "../hooks/useVisionDetection";
+import type { GestureInfo } from "../hooks/useVisionDetection";
 
 const Avatar3D = dynamic(() => import("../components/Avatar3D"), { ssr: false });
 
@@ -110,25 +112,45 @@ function SoundWave({ active }: { active: boolean }) {
 export default function TalkPage() {
   const router = useRouter();
   const [conversationStarted, setConversationStarted] = useState(false);
+  const [agentState, setAgentState] = useState<"off" | "starting" | "on">("off");
   const d = useLiveData();
   const liveDataRef = useRef(d);
   liveDataRef.current = d;
 
+  // ── Vision Detection (face + gestures) ──
+  const vision = useVisionDetection();
+  const gestureHistoryRef = useRef<GestureInfo[]>([]);
+  gestureHistoryRef.current = vision.gestureHistory;
+
   const getLivePrompt = useCallback(() => {
     const ld = liveDataRef.current;
-    return ANGELLA_SYSTEM_PROMPT + `\n\nCURRENT LIVE READINGS FROM THE ALGAETREE SYSTEM:\n- pH Level: ${ld.ph}\n- Temperature: ${ld.temp}°C\n- Dissolved Oxygen (DO2): ${ld.do2} mg/L\n- Biomass Density: ${ld.biomass} g/L (growth rate: +${ld.growth}%/hr)\n- System Efficiency: ${ld.efficiency}%\n- Culture Volume: ${ld.volume} litres\n- Current Cycle Day: ${ld.cycle}\n- Days Until Maintenance: ${ld.maint}\n- CO2 Captured Today: ${ld.co2}g\n- O2 Released Today: ${ld.o2}g\n- Air Purified Today: ${ld.air} litres\n- System Uptime: ${ld.uptime}\n\nWhen a user asks about current readings, stats, or how the system is performing, use these live values in your answer.`;
+    const gestureCtx = buildGestureContext(gestureHistoryRef.current);
+    return ANGELLA_SYSTEM_PROMPT + `\n\nCURRENT LIVE READINGS FROM THE ALGAETREE SYSTEM:\n- pH Level: ${ld.ph}\n- Temperature: ${ld.temp}°C\n- Dissolved Oxygen (DO2): ${ld.do2} mg/L\n- Biomass Density: ${ld.biomass} g/L (growth rate: +${ld.growth}%/hr)\n- System Efficiency: ${ld.efficiency}%\n- Culture Volume: ${ld.volume} litres\n- Current Cycle Day: ${ld.cycle}\n- Days Until Maintenance: ${ld.maint}\n- CO2 Captured Today: ${ld.co2}g\n- O2 Released Today: ${ld.o2}g\n- Air Purified Today: ${ld.air} litres\n- System Uptime: ${ld.uptime}\n\nWhen a user asks about current readings, stats, or how the system is performing, use these live values in your answer.` + gestureCtx;
+  }, []);
+
+  // Build first message based on detected gestures at conversation start
+  const getFirstMessage = useCallback(() => {
+    const gestures = gestureHistoryRef.current;
+    const waved = gestures.some(g => g.name === "Open_Palm" && Date.now() - g.timestamp < 10_000);
+    const thumbsUp = gestures.some(g => g.name === "Thumb_Up" && Date.now() - g.timestamp < 10_000);
+    const peace = gestures.some(g => g.name === "Victory" && Date.now() - g.timestamp < 10_000);
+
+    if (waved) return "Hey there! I saw you waving — welcome! I'm Angella, your AlgaeTree sustainability guide. How can I help you today?";
+    if (thumbsUp) return "Hey! Great to see that thumbs up! I'm Angella, ready to tell you all about how the AlgaeTree captures carbon and cleans the air. What would you like to know?";
+    if (peace) return "Peace! Welcome! I'm Angella, your AlgaeTree guide. I'd love to tell you about how microalgae are helping clean our air. What are you curious about?";
+    return "Hello! I'm Angella, your AlgaeTree sustainability guide. I noticed you standing there and wanted to say hi! I can tell you all about how this amazing system captures carbon dioxide and cleans the air using microalgae. What would you like to know?";
   }, []);
 
   const conversation = useConversation({
-    onConnect: () => setConversationStarted(true),
-    onDisconnect: () => setConversationStarted(false),
+    onConnect: () => { setConversationStarted(true); setAgentState("on"); },
+    onDisconnect: () => { setConversationStarted(false); setAgentState("off"); },
     onError: (error: string) => console.error("ElevenLabs error:", error),
     overrides: {
       agent: {
         prompt: {
           prompt: getLivePrompt(),
         },
-        firstMessage: "Hello! I'm Angella, your AlgaeTree sustainability guide. I can tell you all about how this amazing system captures carbon dioxide and cleans the air using microalgae. What would you like to know?",
+        firstMessage: getFirstMessage(),
         language: "en",
       },
     },
@@ -137,6 +159,8 @@ export default function TalkPage() {
   const isSpeaking = conversation.isSpeaking;
 
   const startConversation = useCallback(async () => {
+    if (agentState !== "off") return; // prevent double-trigger
+    setAgentState("starting");
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
       await conversation.startSession({
@@ -145,8 +169,9 @@ export default function TalkPage() {
       });
     } catch (err) {
       console.error("Failed to start conversation:", err);
+      setAgentState("off");
     }
-  }, [conversation]);
+  }, [conversation, agentState]);
 
   const endConversation = useCallback(async () => {
     try {
@@ -156,20 +181,179 @@ export default function TalkPage() {
     }
   }, [conversation]);
 
-  // Auto-start on mount
+  // ── Face-triggered auto-start: if face present for 2+ seconds and agent is off ──
   useEffect(() => {
-    startConversation();
-    return () => { conversation.endSession().catch(() => {}); };
+    if (
+      vision.faceDetected &&
+      vision.facePresenceDurationMs >= 1500 &&
+      agentState === "off"
+    ) {
+      startConversation();
+    }
+  }, [vision.faceDetected, vision.facePresenceDurationMs, agentState, startConversation]);
+  // ── Auto-end: if no face for 3s and agent is on ──
+  const faceAbsentSinceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (vision.faceDetected) {
+      faceAbsentSinceRef.current = null;
+      return;
+    }
+    // Face just disappeared — start tracking
+    if (faceAbsentSinceRef.current === null) {
+      faceAbsentSinceRef.current = Date.now();
+    }
+    if (agentState !== "on") return;
+
+    const timer = setTimeout(() => {
+      if (!vision.faceDetected && faceAbsentSinceRef.current !== null) {
+        const elapsed = Date.now() - faceAbsentSinceRef.current;
+        if (elapsed >= 3000) {
+          endConversation();
+        }
+      }
+    }, Math.max(0, 3000 - (Date.now() - (faceAbsentSinceRef.current ?? Date.now()))));
+
+    return () => clearTimeout(timer);
+  }, [vision.faceDetected, agentState, endConversation]);
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      conversation.endSession().catch(() => {});
+      vision.cleanup();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div className="h-screen flex flex-col" style={{ background: "var(--bg)", position: "relative", overflow: "hidden" }}>
+      {/* Hidden video element for face/gesture detection */}
+      <video
+        ref={vision.videoRef}
+        playsInline
+        muted
+        style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none", zIndex: -1 }}
+      />
+
       {/* Ambient BG */}
       <div className="ambient-bg">
         <div className="orb orb-1" />
         <div className="orb orb-2" />
         <div className="orb orb-3" />
+      </div>
+
+      {/* ── Vision Detection Status Indicator ── */}
+      <div
+        style={{
+          position: "absolute",
+          top: 90,
+          right: 24,
+          zIndex: 20,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          alignItems: "flex-end",
+        }}
+      >
+        {/* Face detection indicator */}
+        <motion.div
+          className="flex items-center rounded-full"
+          style={{
+            gap: 6,
+            padding: "6px 12px",
+            background: vision.faceDetected ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.05)",
+            border: `1px solid ${vision.faceDetected ? "rgba(34,197,94,0.3)" : "rgba(255,255,255,0.08)"}`,
+            backdropFilter: "blur(12px)",
+          }}
+          animate={{ opacity: vision.isReady ? 1 : 0.4 }}
+        >
+          <span
+            className="rounded-full"
+            style={{
+              width: 6,
+              height: 6,
+              background: vision.faceDetected ? "#22c55e" : "#6b7280",
+              boxShadow: vision.faceDetected ? "0 0 8px #22c55e" : "none",
+            }}
+          />
+          <span style={{ fontSize: 10, fontWeight: 600, color: vision.faceDetected ? "#4ade80" : "var(--text-3)" }}>
+            {!vision.isReady
+              ? "Loading vision..."
+              : vision.faceDetected
+              ? `Face detected${vision.faceCount > 1 ? ` (${vision.faceCount})` : ""}`
+              : "No face detected"}
+          </span>
+        </motion.div>
+
+        {/* Gesture indicators */}
+        <AnimatePresence>
+          {vision.currentGestures.map((g) => (
+            <motion.div
+              key={g.name}
+              className="flex items-center rounded-full"
+              style={{
+                gap: 6,
+                padding: "6px 12px",
+                background: "rgba(168,85,247,0.12)",
+                border: "1px solid rgba(168,85,247,0.3)",
+                backdropFilter: "blur(12px)",
+              }}
+              initial={{ opacity: 0, x: 20, scale: 0.8 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 20, scale: 0.8 }}
+            >
+              <span style={{ fontSize: 12 }}>
+                {g.name === "Open_Palm" ? "👋" : g.name === "Thumb_Up" ? "👍" : g.name === "Thumb_Down" ? "👎" : g.name === "Victory" ? "✌️" : g.name === "ILoveYou" ? "🤟" : g.name === "Closed_Fist" ? "✊" : g.name === "Pointing_Up" ? "☝️" : "🖐️"}
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 600, color: "#c084fc" }}>
+                {g.label}
+              </span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+
+        {/* Waiting for face indicator (when agent is off) */}
+        {agentState === "off" && vision.isReady && !vision.faceDetected && (
+          <motion.div
+            className="rounded-full"
+            style={{
+              padding: "6px 12px",
+              background: "rgba(59,130,246,0.1)",
+              border: "1px solid rgba(59,130,246,0.2)",
+              backdropFilter: "blur(12px)",
+              fontSize: 10,
+              fontWeight: 600,
+              color: "#60a5fa",
+            }}
+            animate={{ opacity: [0.5, 1, 0.5] }}
+            transition={{ duration: 2, repeat: Infinity }}
+          >
+            Step in front of camera to start
+          </motion.div>
+        )}
+
+        {/* Face detected progress (counting to 2s) */}
+        {agentState === "off" && vision.faceDetected && vision.facePresenceDurationMs < 1500 && (
+          <motion.div
+            className="flex items-center rounded-full"
+            style={{
+              gap: 6,
+              padding: "6px 12px",
+              background: "rgba(234,179,8,0.12)",
+              border: "1px solid rgba(234,179,8,0.3)",
+              backdropFilter: "blur(12px)",
+            }}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" style={{ animation: "spin 1.5s linear infinite" }}>
+              <circle cx="7" cy="7" r="5.5" fill="none" stroke="rgba(234,179,8,0.2)" strokeWidth="2" />
+              <path d={`M7 1.5a5.5 5.5 0 0 1 ${5.5 * Math.sin((vision.facePresenceDurationMs / 1500) * Math.PI * 2)} ${5.5 - 5.5 * Math.cos((vision.facePresenceDurationMs / 1500) * Math.PI * 2)}`} fill="none" stroke="#eab308" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <span style={{ fontSize: 10, fontWeight: 600, color: "#eab308" }}>
+              Starting in {Math.max(0, (Math.ceil((1500 - vision.facePresenceDurationMs) / 100) / 10).toFixed(1))}s...
+            </span>
+          </motion.div>
+        )}
       </div>
 
       {/* ── LAYER 0: Full-screen avatar canvas ── */}
@@ -205,7 +389,11 @@ export default function TalkPage() {
       >
         <div className="flex items-center" style={{ gap: 12 }}>
           <button
-            onClick={() => { if (conversationStarted) endConversation(); router.push("/"); }}
+            onClick={async () => {
+              vision.cleanup();
+              if (conversationStarted) await conversation.endSession().catch(() => {});
+              router.push("/");
+            }}
             className="flex items-center justify-center rounded-xl transition-colors cursor-pointer"
             style={{
               width: 36, height: 36,
@@ -342,13 +530,22 @@ export default function TalkPage() {
 
         <AnimatePresence mode="wait">
           <motion.div
-            key={conversationStarted ? "on" : "off"}
+            key={agentState}
             className="text-center"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
           >
-            {!conversationStarted ? (
+            {agentState === "off" ? (
+              <>
+                <p className="font-semibold" style={{ fontSize: "clamp(14px, 1.4vw, 20px)", color: "var(--text-2)" }}>
+                  {vision.isReady ? "Waiting for you..." : "Initializing camera..."}
+                </p>
+                <p style={{ fontSize: "clamp(11px, 1vw, 14px)", color: "var(--text-3)", marginTop: 4 }}>
+                  {vision.isReady ? "Step in front of the camera or tap to start" : "Setting up face detection"}
+                </p>
+              </>
+            ) : agentState === "starting" ? (
               <>
                 <p className="font-semibold" style={{ fontSize: "clamp(14px, 1.4vw, 20px)", color: "var(--text-2)" }}>Connecting...</p>
                 <p style={{ fontSize: "clamp(11px, 1vw, 14px)", color: "var(--text-3)", marginTop: 4 }}>Setting up your conversation with AlgaeTree AI</p>
@@ -367,7 +564,7 @@ export default function TalkPage() {
         </AnimatePresence>
 
         <div className="flex items-center" style={{ gap: 16 }}>
-          {!conversationStarted ? (
+          {agentState === "off" ? (
             <motion.button
               onClick={startConversation}
               className="flex items-center cursor-pointer font-semibold text-white"
@@ -384,8 +581,25 @@ export default function TalkPage() {
                 <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
                 <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
               </svg>
-              Reconnect
+              Start Conversation
             </motion.button>
+          ) : agentState === "starting" ? (
+            <motion.div
+              className="flex items-center font-semibold"
+              style={{
+                gap: 10, padding: "clamp(10px, 1.2vh, 16px) clamp(20px, 2.5vw, 36px)", borderRadius: 50,
+                background: "rgba(34,197,94,0.08)", color: "#4ade80",
+                border: "1px solid rgba(34,197,94,0.2)", fontSize: "clamp(12px, 1.1vw, 15px)",
+              }}
+              animate={{ opacity: [0.5, 1, 0.5] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" style={{ animation: "spin 1.2s linear infinite" }}>
+                <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(74,222,128,0.2)" strokeWidth="3" />
+                <path d="M12 2a10 10 0 0 1 10 10" fill="none" stroke="#4ade80" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+              Connecting...
+            </motion.div>
           ) : (
             <motion.button
               onClick={endConversation}

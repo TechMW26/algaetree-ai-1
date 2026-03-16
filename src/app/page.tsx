@@ -34,6 +34,8 @@ function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint 
         flex: 1,
         background: `linear-gradient(145deg, ${tint}, var(--surface))`,
         overflow: "visible",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ['--card-tint' as any]: `${color}18`,
       }}
       variants={rise}
       whileHover={{ scale: 1.02, transition: { duration: 0.25 } }}
@@ -359,6 +361,8 @@ export default function DashboardPage() {
               style={{
                 padding: 32, gridRow: "1 / 3",
                 background: "linear-gradient(160deg, rgba(34,197,94,0.06) 0%, var(--surface) 40%, rgba(34,197,94,0.03) 100%)",
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ['--card-tint' as any]: 'rgba(34,197,94,0.12)',
               }}
               variants={rise}
               whileHover={{ scale: 1.01, transition: { duration: 0.3 } }}
@@ -384,7 +388,7 @@ export default function DashboardPage() {
               </motion.button>
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
                 {[{ l: "VOLUME", v: `${d.volume}L` }, { l: "CYCLE", v: `${d.cycle}d` }, { l: "MAINT.", v: `${d.maint}d` }].map(s => (
-                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
                     <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
                   </div>
@@ -402,7 +406,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Biomass + Growth */}
-            <motion.div className="card flex flex-col dash-mobile-biomass" style={{ padding: 28, background: "linear-gradient(150deg, rgba(34,197,94,0.05) 0%, var(--surface) 50%, rgba(34,197,94,0.02) 100%)" }} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
+            <motion.div className="card flex flex-col dash-mobile-biomass" style={{ padding: 28, background: "linear-gradient(150deg, rgba(34,197,94,0.05) 0%, var(--surface) 50%, rgba(34,197,94,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(34,197,94,0.12)' } as React.CSSProperties} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
                 <div className="flex items-center" style={{ gap: 8 }}>
                   <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></svg>
@@ -449,6 +453,8 @@ export default function DashboardPage() {
               style={{
                 padding: 32, gridRow: "1 / 3",
                 background: "linear-gradient(160deg, rgba(56,189,248,0.06) 0%, var(--surface) 40%, rgba(56,189,248,0.03) 100%)",
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ['--card-tint' as any]: 'rgba(56,189,248,0.12)',
               }}
               variants={rise}
               whileHover={{ scale: 1.01, transition: { duration: 0.3 } }}
@@ -469,7 +475,7 @@ export default function DashboardPage() {
               {/* Env mini stats */}
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
                 {[{ l: "UV INDEX", v: `${d.uvIndex}` }, { l: "CO₂", v: `${d.co2Ambient} ppm` }, { l: "LIGHT", v: `${(d.lightIntensity / 1000).toFixed(1)}k lux` }].map(s => (
-                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
                     <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
                   </div>
@@ -482,7 +488,7 @@ export default function DashboardPage() {
             <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>} label="Light Intensity" value={Math.round(d.lightIntensity / 100)} unit="×100 lux" min={0} max={150} color="#fbbf24" delay={0.4} tint="rgba(251,191,36,0.04)" />
 
             {/* CO₂ & Atmospheric card */}
-            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(56,189,248,0.05) 0%, var(--surface) 50%, rgba(56,189,248,0.02) 100%)" }} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
+            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(56,189,248,0.05) 0%, var(--surface) 50%, rgba(56,189,248,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(56,189,248,0.12)' } as React.CSSProperties} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
               <div className="flex items-center" style={{ gap: 8, marginBottom: 12 }}>
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>
                 <span className="font-semibold" style={{ fontSize: 15, color: "var(--text-2)" }}>Atmospheric CO₂</span>
@@ -521,6 +527,8 @@ export default function DashboardPage() {
               style={{
                 padding: 32, gridRow: "1 / 3",
                 background: "linear-gradient(160deg, rgba(168,85,247,0.06) 0%, var(--surface) 40%, rgba(168,85,247,0.03) 100%)",
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ['--card-tint' as any]: 'rgba(168,85,247,0.12)',
               }}
               variants={rise}
               whileHover={{ scale: 1.01, transition: { duration: 0.3 } }}
@@ -541,7 +549,7 @@ export default function DashboardPage() {
               {/* Performance mini stats */}
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
                 {[{ l: "ENERGY", v: `${d.energyUsage}W` }, { l: "WATER", v: `${d.waterUsage} L/h` }, { l: "O₂ PROD", v: `${d.oxygenProd} g/h` }].map(s => (
-                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
                     <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
                   </div>
@@ -554,7 +562,7 @@ export default function DashboardPage() {
             <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67 0C8.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>} label="Energy Usage" value={d.energyUsage} unit="W" min={0} max={300} color="#fbbf24" delay={0.4} tint="rgba(251,191,36,0.04)" />
 
             {/* Weekly Biomass Output chart */}
-            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(168,85,247,0.05) 0%, var(--surface) 50%, rgba(168,85,247,0.02) 100%)" }} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
+            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(168,85,247,0.05) 0%, var(--surface) 50%, rgba(168,85,247,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(168,85,247,0.12)' } as React.CSSProperties} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
               <div className="flex items-center" style={{ gap: 8, marginBottom: 12 }}>
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
                 <span className="font-semibold" style={{ fontSize: 15, color: "var(--text-2)" }}>Weekly Biomass Output</span>
@@ -590,6 +598,8 @@ export default function DashboardPage() {
               style={{
                 padding: 32, gridRow: "1 / 3",
                 background: "linear-gradient(160deg, rgba(251,191,36,0.06) 0%, var(--surface) 40%, rgba(251,191,36,0.03) 100%)",
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ['--card-tint' as any]: 'rgba(251,191,36,0.12)',
               }}
               variants={rise}
               whileHover={{ scale: 1.01, transition: { duration: 0.3 } }}
@@ -610,7 +620,7 @@ export default function DashboardPage() {
               {/* System mini stats */}
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
                 {[{ l: "FIRMWARE", v: d.firmwareVersion }, { l: "CALIBRATED", v: d.lastCalibration }, { l: "UPTIME", v: d.uptime }].map(s => (
-                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
                     <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
                   </div>
@@ -623,7 +633,7 @@ export default function DashboardPage() {
             <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>} label="Memory Usage" value={d.memUsage} unit="%" min={0} max={100} color="#a855f7" delay={0.4} tint="rgba(168,85,247,0.04)" />
 
             {/* Device Status card */}
-            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(251,191,36,0.05) 0%, var(--surface) 50%, rgba(251,191,36,0.02) 100%)" }} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
+            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(251,191,36,0.05) 0%, var(--surface) 50%, rgba(251,191,36,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(251,191,36,0.12)' } as React.CSSProperties} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
               <div className="flex items-center" style={{ gap: 8, marginBottom: 16 }}>
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                 <span className="font-semibold" style={{ fontSize: 15, color: "var(--text-2)" }}>Device Status</span>

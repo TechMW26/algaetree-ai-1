@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef, useEffect, Suspense, Component, ReactNode, MutableRefObject } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 const AVATAR_URL = "/avatar.glb";
 
@@ -201,17 +202,6 @@ type GestureName =
   | "Pointing_Up"
   | null;
 
-/**
- * Defines target rotations (Euler XYZ in radians) for the right arm bones
- * to perform each gesture. Left-side bones mirror automatically.
- * Values are offsets ADDED to the idle rest pose.
- */
-interface GesturePose {
-  rightArm: [number, number, number];
-  rightForeArm: [number, number, number];
-  rightHand: [number, number, number];
-}
-
 // Desired world-space directions for each arm bone in the idle arms-down pose.
 // Computed at runtime using Three.js's own world transforms for reliability.
 const ARM_DOWN_TARGETS: Record<string, [number, number, number]> = {
@@ -223,51 +213,27 @@ const ARM_DOWN_TARGETS: Record<string, [number, number, number]> = {
   LeftHand:     [-0.03, -0.92, 0.32],
 };
 
-// Gesture target poses (right arm — left is mirrored for wave)
-const GESTURE_POSES: Record<string, GesturePose> = {
-  // Wave: arm up, forearm up & out, hand upright
-  Open_Palm: {
-    rightArm: [-0.5, -0.3, -0.8],
-    rightForeArm: [-1.2, 0.4, -0.3],
-    rightHand: [0, 0.2, -0.3],
-  },
-  // Thumbs up: arm slightly forward & up, forearm bent up, hand fist rotated
-  Thumb_Up: {
-    rightArm: [-0.3, -0.2, -0.5],
-    rightForeArm: [-1.5, 0.2, 0],
-    rightHand: [0.1, 0, -0.2],
-  },
-  // Thumbs down: similar but hand flipped
-  Thumb_Down: {
-    rightArm: [-0.1, -0.2, -0.3],
-    rightForeArm: [-0.8, 0.1, 0],
-    rightHand: [3.14, 0, 0],
-  },
-  // Peace sign: arm up, forearm up, fingers up
-  Victory: {
-    rightArm: [-0.4, -0.3, -0.7],
-    rightForeArm: [-1.3, 0.3, -0.2],
-    rightHand: [0, 0.1, -0.2],
-  },
-  // I Love You: same as peace but slightly different angle
-  ILoveYou: {
-    rightArm: [-0.45, -0.25, -0.75],
-    rightForeArm: [-1.35, 0.35, -0.15],
-    rightHand: [0.05, 0.15, -0.25],
-  },
-  // Fist bump: arm forward, fist out
-  Closed_Fist: {
-    rightArm: [-0.5, -0.4, -0.5],
-    rightForeArm: [-1.0, 0.2, 0],
-    rightHand: [0.1, 0, 0],
-  },
-  // Pointing up: arm up, index out
-  Pointing_Up: {
-    rightArm: [-0.4, -0.2, -0.6],
-    rightForeArm: [-1.4, 0.3, -0.1],
-    rightHand: [0, 0, -0.15],
-  },
+/**
+ * Emote animation system using motion-captured GLB clips from the
+ * Ready Player Me Animation Library (CC-BY-4.0).
+ * Each gesture detection maps to a full-body emote animation loaded via
+ * THREE.AnimationMixer, giving natural motion-captured body movement.
+ */
+const EMOTE_ANIMATIONS: Record<string, string> = {
+  Open_Palm:   "/animations/M_Standing_Expressions_013.glb", // wave / greeting
+  Thumb_Up:    "/animations/M_Standing_Expressions_012.glb", // thumbs up
+  Thumb_Down:  "/animations/M_Standing_Expressions_014.glb", // head shake / disagree
+  Victory:     "/animations/M_Standing_Expressions_005.glb", // celebration / expressive
+  ILoveYou:    "/animations/M_Standing_Expressions_007.glb", // heartfelt / appreciative
+  Closed_Fist: "/animations/M_Standing_Expressions_008.glb", // fist pump / strong
+  Pointing_Up: "/animations/M_Standing_Expressions_010.glb", // pointing / presenting
 };
+
+// How long to keep gesture active after last MediaPipe detection (seconds)
+const GESTURE_HOLD_TIME = 1.5;
+// Blend duration for crossfading into and out of emotes (seconds)
+const EMOTE_BLEND_IN = 0.3;
+const EMOTE_BLEND_OUT = 0.5;
 
 /* ── 3D Model ── */
 function AvatarModel({
@@ -291,15 +257,25 @@ function AvatarModel({
     RightArm: null, RightForeArm: null, RightHand: null,
     LeftArm: null, LeftForeArm: null, LeftHand: null,
   });
-  // Store original rest quaternions
+  // Store original rest quaternions (arms-down corrected)
   const restQuats = useRef<Record<string, THREE.Quaternion>>({});
-  // Smoothed gesture blend (0 = rest, 1 = full gesture pose)
-  const gestureBlend = useRef(0);
+
+  // ── Emote animation system ──
+  const mixer = useRef<THREE.AnimationMixer | null>(null);
+  const emoteActions = useRef<Record<string, THREE.AnimationAction>>({});
+  const currentEmoteAction = useRef<THREE.AnimationAction | null>(null);
+  // Smoothed emote blend (0 = rest pose, 1 = full animation)
+  const emoteBlend = useRef(0);
   const activeGesture = useRef<GestureName>(null);
+  // Gesture hold: keep gesture active for GESTURE_HOLD_TIME after last detection
+  const gestureHoldName = useRef<GestureName>(null);
+  const gestureLastSeen = useRef(0);
   // Smoothed gesture expression blend for face
   const gestureExprBlend = useRef(0);
-  // Wave oscillator phase
-  const wavePhase = useRef(0);
+  // Manual delta time tracking (clock.getDelta() is unreliable with getElapsedTime())
+  const lastFrameTime = useRef(0);
+  // All bones (not just arm bones) for animation blending
+  const allBones = useRef<Record<string, THREE.Bone>>({});
 
   useEffect(() => {
     const meshes: THREE.Mesh[] = [];
@@ -333,11 +309,14 @@ function AvatarModel({
         }
       }
       if (obj.name === "Head") headBone.current = obj;
-      // Collect arm bones
+      // Collect arm bones for rest pose correction
       if (obj.name in bones.current) {
         (bones.current as Record<string, THREE.Object3D | null>)[obj.name] = obj;
-        // Store the original rest quaternion
         restQuats.current[obj.name] = obj.quaternion.clone();
+      }
+      // Collect ALL bones for animation blending
+      if ((obj as THREE.Bone).isBone) {
+        allBones.current[obj.name] = obj as THREE.Bone;
       }
     });
     morphMeshes.current = meshes;
@@ -357,33 +336,60 @@ function AvatarModel({
       const target = ARM_DOWN_TARGETS[boneName];
       if (!bone || !bone.parent || !target) continue;
 
-      // Current bone +Y direction in world space
       const worldQ = new THREE.Quaternion();
       bone.getWorldQuaternion(worldQ);
       const currentY = new THREE.Vector3(0, 1, 0).applyQuaternion(worldQ).normalize();
-
-      // Desired direction in world space
       const desiredDir = new THREE.Vector3(target[0], target[1], target[2]).normalize();
-
-      // World-space delta rotation from current to desired
       const deltaWorld = new THREE.Quaternion().setFromUnitVectors(currentY, desiredDir);
 
-      // Convert world delta to local delta:
-      // delta_local = parentWorldQ^-1 * delta_world * parentWorldQ
       const parentWorldQ = new THREE.Quaternion();
       bone.parent.getWorldQuaternion(parentWorldQ);
       const parentInv = parentWorldQ.clone().invert();
       const deltaLocal = parentInv.multiply(deltaWorld).multiply(parentWorldQ);
 
-      // Apply: new_local = delta_local * old_local
       bone.quaternion.premultiply(deltaLocal);
-
-      // Update world matrices so child bones see the corrected parent
       bone.updateWorldMatrix(false, true);
 
-      // Store as the new rest quaternion
       restQuats.current[boneName] = bone.quaternion.clone();
     }
+
+    // ── Create AnimationMixer and load emote clips ──
+    mixer.current = new THREE.AnimationMixer(scene);
+
+    // Listen for animation end to clean up
+    mixer.current.addEventListener("finished", () => {
+      // Animation completed its play-through; we'll blend out via emoteBlend
+    });
+
+    const loader = new GLTFLoader();
+    const loadPromises = Object.entries(EMOTE_ANIMATIONS).map(
+      ([gestureName, url]) =>
+        new Promise<void>((resolve) => {
+          loader.load(
+            url,
+            (gltf) => {
+              if (gltf.animations.length > 0 && mixer.current) {
+                const clip = gltf.animations[0];
+                clip.name = gestureName; // rename for clarity
+                const action = mixer.current.clipAction(clip);
+                action.setLoop(THREE.LoopOnce, 1);
+                action.clampWhenFinished = true;
+                action.setEffectiveWeight(0);
+                emoteActions.current[gestureName] = action;
+              }
+              resolve();
+            },
+            undefined,
+            () => resolve(), // silently skip failed loads
+          );
+        }),
+    );
+    Promise.all(loadPromises);
+
+    return () => {
+      mixer.current?.stopAllAction();
+      mixer.current = null;
+    };
   }, [scene]);
 
   useFrame(({ clock }) => {
@@ -462,22 +468,55 @@ function AvatarModel({
       }
     });
 
-    // ── Gesture arm animation ──
+    // ── Emote animation system ──
     const curGesture = gestureRef.current;
-    const BLEND_SPEED = 4.0; // blend in/out per second (~0.25s)
-    const dt = Math.min(clock.getDelta(), 0.05); // cap to avoid jumps
+    // Manual delta: clock.getDelta() is unreliable when getElapsedTime() is also used
+    const now = t;
+    const dt = lastFrameTime.current > 0 ? Math.min(now - lastFrameTime.current, 0.05) : 0.016;
+    lastFrameTime.current = now;
 
-    if (curGesture && GESTURE_POSES[curGesture]) {
-      activeGesture.current = curGesture;
-      gestureBlend.current = Math.min(1, gestureBlend.current + BLEND_SPEED * dt);
-      gestureExprBlend.current = Math.min(1, gestureExprBlend.current + BLEND_SPEED * 0.8 * dt);
+    // Sticky gesture: hold detected gesture active for GESTURE_HOLD_TIME
+    if (curGesture && emoteActions.current[curGesture]) {
+      gestureHoldName.current = curGesture;
+      gestureLastSeen.current = now;
+    }
+    const heldGesture = gestureHoldName.current;
+    const gestureFresh = heldGesture && (now - gestureLastSeen.current) < GESTURE_HOLD_TIME;
+
+    if (gestureFresh && heldGesture) {
+      // Start or continue emote
+      if (activeGesture.current !== heldGesture) {
+        // Switch to new emote
+        if (currentEmoteAction.current) {
+          currentEmoteAction.current.fadeOut(EMOTE_BLEND_IN);
+        }
+        const action = emoteActions.current[heldGesture];
+        if (action) {
+          action.reset();
+          action.setEffectiveWeight(1);
+          action.fadeIn(EMOTE_BLEND_IN);
+          action.play();
+          currentEmoteAction.current = action;
+        }
+        activeGesture.current = heldGesture;
+      }
+      emoteBlend.current = Math.min(1, emoteBlend.current + dt / EMOTE_BLEND_IN);
+      gestureExprBlend.current = Math.min(1, gestureExprBlend.current + dt / (EMOTE_BLEND_IN * 1.2));
     } else {
-      gestureBlend.current = Math.max(0, gestureBlend.current - BLEND_SPEED * dt);
-      gestureExprBlend.current = Math.max(0, gestureExprBlend.current - BLEND_SPEED * 0.5 * dt);
-      if (gestureBlend.current <= 0) activeGesture.current = null;
+      // Blend out
+      emoteBlend.current = Math.max(0, emoteBlend.current - dt / EMOTE_BLEND_OUT);
+      gestureExprBlend.current = Math.max(0, gestureExprBlend.current - dt / (EMOTE_BLEND_OUT * 1.5));
+      if (emoteBlend.current <= 0) {
+        if (currentEmoteAction.current) {
+          currentEmoteAction.current.fadeOut(0.1);
+          currentEmoteAction.current = null;
+        }
+        activeGesture.current = null;
+        gestureHoldName.current = null;
+      }
     }
 
-    const blend = gestureBlend.current;
+    const blend = emoteBlend.current;
     const gesture = activeGesture.current;
     const exprBlend = gestureExprBlend.current;
 
@@ -487,40 +526,32 @@ function AvatarModel({
         const d = mesh.morphTargetDictionary!;
         const inf = mesh.morphTargetInfluences!;
 
-        // Smile — all gestures get a warm smile
         const smileAmount = exprBlend * 0.35;
         if (d.mouthSmileLeft !== undefined)
           inf[d.mouthSmileLeft] = Math.max(inf[d.mouthSmileLeft], smileAmount);
         if (d.mouthSmileRight !== undefined)
           inf[d.mouthSmileRight] = Math.max(inf[d.mouthSmileRight], smileAmount);
-
-        // Cheek squint accompanies smile
         if (d.cheekSquintLeft !== undefined)
           inf[d.cheekSquintLeft] = Math.max(inf[d.cheekSquintLeft], exprBlend * 0.2);
         if (d.cheekSquintRight !== undefined)
           inf[d.cheekSquintRight] = Math.max(inf[d.cheekSquintRight], exprBlend * 0.2);
 
-        // Gesture-specific expressions
         if (gesture === "Thumb_Up") {
-          // Big happy smile + raised brows
           if (d.mouthSmileLeft !== undefined) inf[d.mouthSmileLeft] = exprBlend * 0.5;
           if (d.mouthSmileRight !== undefined) inf[d.mouthSmileRight] = exprBlend * 0.5;
           if (d.browInnerUp !== undefined) inf[d.browInnerUp] = exprBlend * 0.15;
           if (d.browOuterUpLeft !== undefined) inf[d.browOuterUpLeft] = exprBlend * 0.12;
           if (d.browOuterUpRight !== undefined) inf[d.browOuterUpRight] = exprBlend * 0.12;
         } else if (gesture === "Open_Palm") {
-          // Friendly smile + slightly raised brows
           if (d.mouthSmileLeft !== undefined) inf[d.mouthSmileLeft] = exprBlend * 0.4;
           if (d.mouthSmileRight !== undefined) inf[d.mouthSmileRight] = exprBlend * 0.4;
           if (d.browOuterUpLeft !== undefined) inf[d.browOuterUpLeft] = exprBlend * 0.1;
           if (d.browOuterUpRight !== undefined) inf[d.browOuterUpRight] = exprBlend * 0.1;
         } else if (gesture === "Victory" || gesture === "ILoveYou") {
-          // Playful expression
           if (d.mouthSmileLeft !== undefined) inf[d.mouthSmileLeft] = exprBlend * 0.45;
           if (d.mouthSmileRight !== undefined) inf[d.mouthSmileRight] = exprBlend * 0.45;
           if (d.browInnerUp !== undefined) inf[d.browInnerUp] = exprBlend * 0.1;
         } else if (gesture === "Thumb_Down") {
-          // Empathetic slight frown
           if (d.mouthSmileLeft !== undefined) inf[d.mouthSmileLeft] = 0;
           if (d.mouthSmileRight !== undefined) inf[d.mouthSmileRight] = 0;
           if (d.browInnerUp !== undefined) inf[d.browInnerUp] = exprBlend * 0.2;
@@ -530,45 +561,37 @@ function AvatarModel({
       });
     }
 
-    // ── Always enforce rest quaternions first, then layer animation on top ──
+    // ── Bone pose: blend between manual rest pose and animation ──
+    // 1. Set all arm bones to rest (arms-down) pose
     for (const name of Object.keys(bones.current)) {
       const bone = bones.current[name];
       const rest = restQuats.current[name];
       if (bone && rest) bone.quaternion.copy(rest);
     }
 
-    if (blend > 0.001 && gesture) {
-      const pose = GESTURE_POSES[gesture];
-      const tmpQ = new THREE.Quaternion();
-      const targetQ = new THREE.Quaternion();
-
-      // Wave oscillation (only for Open_Palm)
-      if (gesture === "Open_Palm") {
-        wavePhase.current += dt * 5.0;
+    if (blend > 0.001 && mixer.current) {
+      // Save rest quaternions for all bones so we can slerp after mixer update
+      const savedQuats: Record<string, THREE.Quaternion> = {};
+      for (const [name, bone] of Object.entries(allBones.current)) {
+        savedQuats[name] = bone.quaternion.clone();
       }
 
-      const applyGestureBone = (boneName: string, euler: [number, number, number]) => {
-        const bone = bones.current[boneName];
-        const rest = restQuats.current[boneName];
-        if (!bone || !rest) return;
+      // Let AnimationMixer apply the emote animation
+      mixer.current.update(dt);
 
-        const [rx, ry, rz] = euler;
-        // For wave gesture, oscillate the hand rotation
-        const waveOffset =
-          gesture === "Open_Palm" && boneName === "RightHand"
-            ? Math.sin(wavePhase.current) * 0.4
-            : 0;
+      // Slerp each bone between rest pose and animation-applied pose
+      for (const [name, bone] of Object.entries(allBones.current)) {
+        const savedQ = savedQuats[name];
+        if (savedQ) {
+          // bone.quaternion now has the animation-set value
+          const animQ = bone.quaternion.clone();
+          bone.quaternion.slerpQuaternions(savedQ, animQ, blend);
+        }
+      }
+    } else {
+      // No emote — just update mixer time (keeps it in sync) but weight is 0
+      if (mixer.current) mixer.current.update(dt);
 
-        tmpQ.setFromEuler(new THREE.Euler(rx, ry + waveOffset, rz));
-        targetQ.copy(rest).multiply(tmpQ);
-        bone.quaternion.slerpQuaternions(rest, targetQ, blend);
-      };
-
-      // Right arm poses
-      applyGestureBone("RightArm", pose.rightArm);
-      applyGestureBone("RightForeArm", pose.rightForeArm);
-      applyGestureBone("RightHand", pose.rightHand);
-    } else if (blend <= 0.001) {
       // Subtle idle sway — very small so hands look consistent
       for (const name of Object.keys(bones.current)) {
         const bone = bones.current[name];
@@ -590,7 +613,11 @@ function AvatarModel({
     }
   });
 
-  return <primitive object={scene} position={[0, -1.4, 0]} rotation={[-0.04, 0, 0]} />;
+  // On desktop (landscape), push model down so head isn't clipped at top
+  const { size } = useThree();
+  const modelY = size.width > size.height ? -1.55 : -1.4;
+
+  return <primitive object={scene} position={[0, modelY, 0]} rotation={[-0.04, 0, 0]} />;
 }
 
 /* ── Loading placeholder ── */

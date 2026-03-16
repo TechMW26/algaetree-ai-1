@@ -152,7 +152,18 @@ export function useVisionDetection(): VisionState {
         const video = videoRef.current;
         if (video) {
           video.srcObject = stream;
-          await video.play();
+          video.setAttribute("playsinline", "true");
+          video.muted = true;
+          try {
+            await video.play();
+          } catch {
+            // On Raspberry Pi / some browsers, play() can fail if element isn't fully mounted.
+            // Wait briefly and retry once.
+            await new Promise((r) => setTimeout(r, 300));
+            await video.play().catch(() => {
+              console.warn("Video play() failed — detection may not start until user interaction.");
+            });
+          }
         }
 
         // 2. Load MediaPipe WASM runtime
@@ -160,154 +171,100 @@ export function useVisionDetection(): VisionState {
 
         if (cancelled) return;
 
-        // 3. Create Face Detector — try GPU first, fall back to CPU for Raspberry Pi
-        let faceDetector: FaceDetector;
-        try {
-          faceDetector = await FaceDetector.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
-              delegate: "GPU",
-            },
-            runningMode: "VIDEO",
-            minDetectionConfidence: 0.5,
-          });
-        } catch {
-          faceDetector = await FaceDetector.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
-              delegate: "CPU",
-            },
-            runningMode: "VIDEO",
-            minDetectionConfidence: 0.5,
-          });
-        }
-
-        if (cancelled) {
-          faceDetector.close();
-          return;
-        }
-
-        // 4. Create Gesture Recognizer — try GPU first, fall back to CPU
-        let gestureRecognizer: GestureRecognizer;
-        try {
-          gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
-              delegate: "GPU",
-            },
-            runningMode: "VIDEO",
-            numHands: 2,
-            minHandDetectionConfidence: 0.5,
-            minHandPresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
-          });
-        } catch {
-          gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
-              delegate: "CPU",
-            },
-            runningMode: "VIDEO",
-            numHands: 2,
-            minHandDetectionConfidence: 0.5,
-            minHandPresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
-          });
-        }
-
-        if (cancelled) {
-          faceDetector.close();
-          gestureRecognizer.close();
-          return;
-        }
-
-        // 5. Create FaceLandmarker for smile detection (optional — non-blocking)
-        let faceLandmarker: FaceLandmarker | null = null;
-        try {
+        // 3. Helper: create detector with GPU→CPU fallback
+        async function createWithFallback<T>(
+          factory: (v: typeof vision, delegate: "GPU" | "CPU") => Promise<T>,
+        ): Promise<T> {
           try {
-            faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-              baseOptions: {
-                modelAssetPath:
-                  "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-                delegate: "GPU",
-              },
-              runningMode: "VIDEO",
-              numFaces: 1,
-              outputFaceBlendshapes: true,
-            });
+            return await factory(vision, "GPU");
           } catch {
-            faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            return await factory(vision, "CPU");
+          }
+        }
+
+        // 4. Load FaceDetector + GestureRecognizer in PARALLEL (both required)
+        const [faceDetector, gestureRecognizer] = await Promise.all([
+          createWithFallback((v, d) =>
+            FaceDetector.createFromOptions(v, {
               baseOptions: {
                 modelAssetPath:
-                  "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-                delegate: "CPU",
+                  "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+                delegate: d,
               },
               runningMode: "VIDEO",
-              numFaces: 1,
-              outputFaceBlendshapes: true,
-            });
-          }
-        } catch (err) {
-          console.warn("FaceLandmarker init failed (smile detection disabled):", err);
-        }
+              minDetectionConfidence: 0.5,
+            }),
+          ),
+          createWithFallback((v, d) =>
+            GestureRecognizer.createFromOptions(v, {
+              baseOptions: {
+                modelAssetPath:
+                  "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+                delegate: d,
+              },
+              runningMode: "VIDEO",
+              numHands: 2,
+              minHandDetectionConfidence: 0.5,
+              minHandPresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
+            }),
+          ),
+        ]);
 
         if (cancelled) {
           faceDetector.close();
           gestureRecognizer.close();
-          faceLandmarker?.close();
-          return;
-        }
-
-        // 6. Create ObjectDetector for phone detection (optional — non-blocking)
-        let objectDetector: ObjectDetector | null = null;
-        try {
-          try {
-            objectDetector = await ObjectDetector.createFromOptions(vision, {
-              baseOptions: {
-                modelAssetPath:
-                  "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite",
-                delegate: "GPU",
-              },
-              runningMode: "VIDEO",
-              maxResults: 5,
-              scoreThreshold: 0.4,
-              categoryAllowlist: ["cell phone"],
-            });
-          } catch {
-            objectDetector = await ObjectDetector.createFromOptions(vision, {
-              baseOptions: {
-                modelAssetPath:
-                  "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite",
-                delegate: "CPU",
-              },
-              runningMode: "VIDEO",
-              maxResults: 5,
-              scoreThreshold: 0.4,
-              categoryAllowlist: ["cell phone"],
-            });
-          }
-        } catch (err) {
-          console.warn("ObjectDetector init failed (phone detection disabled):", err);
-        }
-
-        if (cancelled) {
-          faceDetector.close();
-          gestureRecognizer.close();
-          faceLandmarker?.close();
-          objectDetector?.close();
           return;
         }
 
         faceDetectorRef.current = faceDetector;
         gestureRecognizerRef.current = gestureRecognizer;
-        faceLandmarkerRef.current = faceLandmarker;
-        objectDetectorRef.current = objectDetector;
 
+        // ── Mark ready NOW so camera + face/gesture detection starts immediately ──
         setIsReady(true);
+
+        // 5. Load FaceLandmarker + ObjectDetector lazily in background (optional, non-blocking)
+        Promise.all([
+          createWithFallback((v, d) =>
+            FaceLandmarker.createFromOptions(v, {
+              baseOptions: {
+                modelAssetPath:
+                  "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                delegate: d,
+              },
+              runningMode: "VIDEO",
+              numFaces: 1,
+              outputFaceBlendshapes: true,
+            }),
+          ).catch((err) => {
+            console.warn("FaceLandmarker init failed (smile detection disabled):", err);
+            return null;
+          }),
+          createWithFallback((v, d) =>
+            ObjectDetector.createFromOptions(v, {
+              baseOptions: {
+                modelAssetPath:
+                  "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite",
+                delegate: d,
+              },
+              runningMode: "VIDEO",
+              maxResults: 5,
+              scoreThreshold: 0.4,
+              categoryAllowlist: ["cell phone"],
+            }),
+          ).catch((err) => {
+            console.warn("ObjectDetector init failed (phone detection disabled):", err);
+            return null;
+          }),
+        ]).then(([faceLandmarker, objectDetector]) => {
+          if (cancelled) {
+            faceLandmarker?.close();
+            objectDetector?.close();
+            return;
+          }
+          faceLandmarkerRef.current = faceLandmarker;
+          objectDetectorRef.current = objectDetector;
+        });
       } catch (err) {
         if (!cancelled) {
           console.error("Vision detection init error:", err);

@@ -215,10 +215,10 @@ app.whenReady().then(() => {
   // Prevent power saving / screen blanking
   powerBlockerId = powerSaveBlocker.start("prevent-display-sleep");
 
-  // Set permissions for microphone (needed for voice conversation)
+  // Set permissions for microphone and camera (needed for voice conversation and vision detection)
   session.defaultSession.setPermissionRequestHandler(
     (_webContents, permission, callback) => {
-      const allowed = ["media", "microphone", "audioCapture"];
+      const allowed = ["media", "microphone", "camera", "audioCapture", "videocapture"];
       callback(allowed.includes(permission));
     }
   );

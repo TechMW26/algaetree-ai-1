@@ -85,6 +85,22 @@ fi
 echo "Node.js: $(node -v)"
 echo "npm: $(npm -v)"
 
+# ── Step 3b: Enable camera and add user to video group ──
+echo -e "${YELLOW}[3b/8] Enabling camera...${NC}"
+# Enable the camera interface (legacy + libcamera)
+raspi-config nonint do_camera 0 2>/dev/null || true
+# Ensure the user is in the video group (needed for camera device access)
+usermod -aG video "$APP_USER" 2>/dev/null || true
+# Load the V4L2 camera module if not already loaded
+if ! lsmod | grep -q bcm2835_v4l2; then
+  modprobe bcm2835-v4l2 2>/dev/null || true
+fi
+# Ensure it loads on boot
+if ! grep -q "bcm2835-v4l2" /etc/modules 2>/dev/null; then
+  echo "bcm2835-v4l2" >> /etc/modules 2>/dev/null || true
+fi
+echo "Camera enabled"
+
 # ── Step 4: Install kiosk app dependencies ──
 echo -e "${YELLOW}[4/8] Installing kiosk application...${NC}"
 cd "$KIOSK_DIR"
@@ -136,7 +152,7 @@ Environment=NODE_ENV=production
 Environment=ELECTRON_DISABLE_SANDBOX=1
 WorkingDirectory=$KIOSK_DIR
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/bin/npx electron . --no-sandbox --disable-gpu-sandbox
+ExecStart=/usr/bin/npx electron . --no-sandbox --disable-gpu-sandbox --use-fake-ui-for-media-stream
 Restart=always
 RestartSec=3
 StartLimitIntervalSec=0

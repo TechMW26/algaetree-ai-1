@@ -89,31 +89,91 @@ export function useVisionDetection(): VisionState {
 
     async function init() {
       try {
-        // 1. Load MediaPipe WASM runtime
+        // 1. Request camera permission early & acquire stream
+        //    Try "user" facing first, then fall back to any available camera (USB webcams on Pi)
+        let stream: MediaStream | null = null;
+        const constraints: MediaStreamConstraints[] = [
+          { video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
+          { video: { width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
+          { video: true, audio: false },
+        ];
+
+        for (const c of constraints) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(c);
+            break;
+          } catch {
+            // try next constraint set
+          }
+        }
+
+        if (!stream) {
+          // Last resort: enumerate devices and pick the first video input
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevice = devices.find((d) => d.kind === "videoinput");
+          if (videoDevice) {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { deviceId: { exact: videoDevice.deviceId } },
+              audio: false,
+            });
+          }
+        }
+
+        if (!stream) {
+          throw new Error("No camera found. Please connect a camera and grant permission.");
+        }
+
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        // Attach camera to video element immediately so it's warming up while models load
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          await video.play();
+        }
+
+        // 2. Load MediaPipe WASM runtime
         const vision = await FilesetResolver.forVisionTasks(VISION_CDN);
 
         if (cancelled) return;
 
-        // 2. Create Face Detector — GPU-accelerated, fast
-        const faceDetector = await FaceDetector.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          minDetectionConfidence: 0.5,
-        });
+        // 3. Create Face Detector — try GPU first, fall back to CPU for Raspberry Pi
+        let faceDetector: FaceDetector;
+        try {
+          faceDetector = await FaceDetector.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath:
+                "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+              delegate: "GPU",
+            },
+            runningMode: "VIDEO",
+            minDetectionConfidence: 0.5,
+          });
+        } catch {
+          faceDetector = await FaceDetector.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath:
+                "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+              delegate: "CPU",
+            },
+            runningMode: "VIDEO",
+            minDetectionConfidence: 0.5,
+          });
+        }
 
         if (cancelled) {
           faceDetector.close();
           return;
         }
 
-        // 3. Create Gesture Recognizer — detects hand gestures
-        const gestureRecognizer = await GestureRecognizer.createFromOptions(
-          vision,
-          {
+        // 4. Create Gesture Recognizer — try GPU first, fall back to CPU
+        let gestureRecognizer: GestureRecognizer;
+        try {
+          gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
             baseOptions: {
               modelAssetPath:
                 "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
@@ -124,8 +184,21 @@ export function useVisionDetection(): VisionState {
             minHandDetectionConfidence: 0.5,
             minHandPresenceConfidence: 0.5,
             minTrackingConfidence: 0.5,
-          }
-        );
+          });
+        } catch {
+          gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath:
+                "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+              delegate: "CPU",
+            },
+            runningMode: "VIDEO",
+            numHands: 2,
+            minHandDetectionConfidence: 0.5,
+            minHandPresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5,
+          });
+        }
 
         if (cancelled) {
           faceDetector.close();
@@ -135,27 +208,6 @@ export function useVisionDetection(): VisionState {
 
         faceDetectorRef.current = faceDetector;
         gestureRecognizerRef.current = gestureRecognizer;
-
-        // 4. Start camera
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: 640, height: 480 },
-          audio: false,
-        });
-
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          faceDetector.close();
-          gestureRecognizer.close();
-          return;
-        }
-
-        streamRef.current = stream;
-
-        const video = videoRef.current;
-        if (video) {
-          video.srcObject = stream;
-          await video.play();
-        }
 
         setIsReady(true);
       } catch (err) {

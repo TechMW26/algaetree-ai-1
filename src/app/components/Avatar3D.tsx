@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, Suspense, Component, ReactNode } from "react";
+import { useRef, useEffect, Suspense, Component, ReactNode, MutableRefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -22,188 +22,284 @@ class AvatarErrorBoundary extends Component<
 }
 
 /*
- * ── Coarticulation-based lip sync engine ──
+ * ── Audio-reactive pose-cycling lip sync ──
  *
- * Instead of cycling sine waves, this simulates how speech actually works:
- * 1. Words are sequences of phonemes (consonant-vowel patterns)
- * 2. Each phoneme maps to a specific set of morph targets with weights
- * 3. Phonemes blend into each other (coarticulation) — the mouth anticipates the next shape
- * 4. Between words there are brief closures (jaw nearly shut)
- * 5. Speaking tempo varies naturally
+ * Production lip sync without phoneme data works by:
+ * 1. Cycling through complete mouth POSES (not individual morph targets)
+ * 2. Timing transitions to audio transients (syllable onsets)
+ * 3. Modulating pose intensity by volume (loud = pronounced, quiet = subtle)
+ * 4. Between syllables, blending toward a closed-mouth rest pose
+ *
+ * This mirrors how Synthesia / D-ID / Ready Player Me handle
+ * real-time lip sync when no phoneme stream is available.
  */
 
-// Phoneme definitions — each maps to the Oculus/ARKit viseme morph targets
-// Weights are tuned for natural-looking positions
-interface Phoneme {
-  targets: Record<string, number>; // morph target name → weight
-  hold: number; // how long to hold in seconds
-}
+// All viseme channel names we drive
+const VISEME_KEYS = [
+  "jawOpen", "viseme_aa", "viseme_E", "viseme_O", "viseme_U",
+  "viseme_SS", "viseme_FF", "viseme_PP", "viseme_TH", "viseme_DD",
+  "viseme_kk", "viseme_RR", "viseme_nn", "viseme_CH",
+] as const;
 
-const PHONEMES: Phoneme[] = [
-  // Bilabial closure (P, B, M) — lips pressed
-  { targets: { viseme_PP: 0.7, jawOpen: 0.02 }, hold: 0.06 },
-  // Open vowel (AA) — wide mouth
-  { targets: { viseme_aa: 0.65, jawOpen: 0.38 }, hold: 0.11 },
-  // Mid vowel (E) — slightly spread
-  { targets: { viseme_E: 0.6, jawOpen: 0.22 }, hold: 0.09 },
-  // Rounded vowel (O) — lips rounded
-  { targets: { viseme_O: 0.6, jawOpen: 0.3 }, hold: 0.1 },
-  // Tight rounded (U) — small opening
-  { targets: { viseme_U: 0.55, jawOpen: 0.12 }, hold: 0.08 },
-  // Fricative (F, V) — lower lip to teeth
-  { targets: { viseme_FF: 0.6, jawOpen: 0.08 }, hold: 0.06 },
-  // Sibilant (S, Z) — teeth nearly closed
-  { targets: { viseme_SS: 0.5, jawOpen: 0.05 }, hold: 0.07 },
-  // Dental (TH) — tongue to teeth
-  { targets: { viseme_TH: 0.45, jawOpen: 0.1 }, hold: 0.06 },
-  // Alveolar (T, D, N) — tongue tap
-  { targets: { viseme_DD: 0.4, jawOpen: 0.15 }, hold: 0.05 },
-  // Velar (K, G) — back tongue
-  { targets: { viseme_kk: 0.45, jawOpen: 0.18 }, hold: 0.06 },
-  // Liquid (R, L) — slight opening
-  { targets: { viseme_RR: 0.35, jawOpen: 0.2 }, hold: 0.08 },
-  // Nasal (N, NG) — relaxed
-  { targets: { viseme_nn: 0.3, jawOpen: 0.1 }, hold: 0.07 },
-  // Affricate (CH, J)
-  { targets: { viseme_CH: 0.5, jawOpen: 0.12 }, hold: 0.06 },
+type VisemeKey = (typeof VISEME_KEYS)[number];
+
+// Complete mouth poses — each a distinct, recognizable mouth shape
+const POSES: Partial<Record<VisemeKey, number>>[] = [
+  // 0: Open vowel "ah" — wide open
+  { jawOpen: 0.30, viseme_aa: 0.28 },
+  // 1: Mid vowel "eh" — slightly open, spread
+  { jawOpen: 0.14, viseme_E: 0.24 },
+  // 2: Rounded "oh" — medium open, lips rounded
+  { jawOpen: 0.20, viseme_O: 0.26 },
+  // 3: Tight "oo" — nearly closed, lips pursed
+  { jawOpen: 0.06, viseme_U: 0.20 },
+  // 4: Bilabial "mm/pp" — lips pressed shut
+  { jawOpen: 0.01, viseme_PP: 0.18 },
+  // 5: Fricative "ff/vv" — lower lip to teeth
+  { jawOpen: 0.04, viseme_FF: 0.20 },
+  // 6: Sibilant "ss/sh" — teeth close, spread
+  { jawOpen: 0.04, viseme_SS: 0.20, viseme_E: 0.06 },
+  // 7: Dental/tap "th/d/t" — tongue forward
+  { jawOpen: 0.10, viseme_TH: 0.16, viseme_DD: 0.08 },
+  // 8: Open variant "ah" + liquid
+  { jawOpen: 0.24, viseme_aa: 0.18, viseme_RR: 0.12 },
+  // 9: Velar "k/g" — back tongue, mid open
+  { jawOpen: 0.12, viseme_kk: 0.16, viseme_nn: 0.06 },
 ];
 
-// Pre-built "word" patterns — sequences of phoneme indices that feel like real syllables
-const WORD_PATTERNS = [
-  [1, 8, 2, 5],        // "ah-d-eh-f"  (like "adverb")
-  [0, 1, 9, 2],        // "p-ah-k-eh"  (like "packet")
-  [6, 3, 10, 2],       // "s-oh-r-eh"  (like "sorry")
-  [5, 3, 10],          // "f-oh-r"     (like "for")
-  [8, 4, 6],           // "d-oo-s"     (like "deuce")
-  [1, 11, 8],          // "ah-n-d"     (like "and")
-  [7, 2],              // "th-eh"      (like "the")
-  [9, 3, 0, 1],        // "k-oh-p-ah"  (like "copper")
-  [2, 9, 6, 8],        // "eh-k-s-d"   (like "extend")
-  [0, 10, 3, 6, 2, 6], // "p-r-oh-s-eh-s" (like "process")
-  [1, 10],             // "ah-r"       (like "are")
-  [12, 2, 9],          // "ch-eh-k"    (like "check")
-  [8, 1, 8, 1],        // "d-ah-t-ah"  (like "data")
-  [5, 10, 3, 0],       // "f-r-oh-p"   (free-form)
-  [11, 3, 8],          // "n-oh-d"     (like "node")
+// Pre-built pose sequences that feel like natural syllable patterns
+const POSE_SEQUENCES = [
+  [0, 7, 1, 4, 2, 6, 0, 5],
+  [1, 0, 9, 4, 8, 6, 3],
+  [2, 5, 0, 1, 7, 3, 6, 0],
+  [0, 6, 8, 4, 1, 0, 7, 5],
+  [3, 0, 7, 2, 4, 1, 9, 0],
+  [8, 1, 5, 0, 3, 7, 2, 4],
 ];
 
-// Pause between words (mouth nearly closed)
-const WORD_GAP: Phoneme = { targets: { jawOpen: 0.01 }, hold: 0.1 };
+class AudioLipSync {
+  private current: Record<VisemeKey, number>;
 
-class LipSyncEngine {
-  private wordQueue: number[] = [];
-  private currentWord: Phoneme[] = [];
-  private phonemeIdx = 0;
-  private phonemeTimer = 0;
-  private prevTargets: Record<string, number> = {};
-  private currentTargets: Record<string, number> = {};
-  private inGap = false;
-  private gapTimer = 0;
-  private rng = 0;
+  // Audio envelope
+  private volumeFast = 0;   // smoothed follower
+  private volumeSlow = 0;   // slower follower for blend
+  private prevRms = 0;
 
-  // Simple deterministic pseudo-random
+  // Pose cycling
+  private seqIdx = 0;
+  private poseIdx = 0;
+  private poseTimer = 0;
+  private rng = 42;
+
+  constructor() {
+    this.current = {} as Record<VisemeKey, number>;
+    for (const k of VISEME_KEYS) this.current[k] = 0;
+  }
+
   private rand() {
     this.rng = (this.rng * 16807 + 7) % 2147483647;
     return (this.rng % 1000) / 1000;
   }
 
-  update(dt: number, isSpeaking: boolean): Record<string, number> {
+  /** Compute speech-band RMS from FFT data, or fall back to volume */
+  private getRms(freqData: Uint8Array | undefined | null, fallbackVol: number): number {
+    if (freqData && freqData.length > 16) {
+      const lo = Math.max(1, Math.floor(freqData.length * 0.005));
+      const hi = Math.min(freqData.length - 1, Math.floor(freqData.length * 0.18));
+      let sumSq = 0;
+      for (let i = lo; i <= hi; i++) {
+        const v = freqData[i] / 255;
+        sumSq += v * v;
+      }
+      return Math.sqrt(sumSq / (hi - lo + 1));
+    }
+    return fallbackVol;
+  }
+
+  update(
+    freqData: Uint8Array | undefined | null,
+    volume: number,
+    speaking: boolean,
+  ): Record<string, number> {
     const result: Record<string, number> = {};
 
-    if (!isSpeaking) {
-      // Decay all to zero
-      for (const key of Object.keys(this.currentTargets)) {
-        this.currentTargets[key] = (this.currentTargets[key] || 0) * 0.88;
-        if (this.currentTargets[key] < 0.005) this.currentTargets[key] = 0;
-        result[key] = this.currentTargets[key];
+    // ── Not speaking: gentle decay ──
+    if (!speaking) {
+      for (const k of VISEME_KEYS) {
+        this.current[k] *= 0.55;          // softer falloff so mouth closes smoothly
+        if (this.current[k] < 0.002) this.current[k] = 0;
+        result[k] = this.current[k];
       }
-      this.currentWord = [];
-      this.phonemeIdx = 0;
-      this.wordQueue = [];
+      this.volumeFast = 0;
+      this.volumeSlow = 0;
+      this.prevRms = 0;
       return result;
     }
 
-    // In word gap
-    if (this.inGap) {
-      this.gapTimer -= dt;
-      if (this.gapTimer <= 0) {
-        this.inGap = false;
-        this.pickNextWord();
+    // ── 1. Get audio level ──
+    const rms = this.getRms(freqData, volume);
+
+    // ── 2. Smoothed envelope followers ──
+    this.volumeFast += (rms - this.volumeFast) * 0.25;
+    this.volumeSlow += (rms - this.volumeSlow) * 0.12;
+
+    // ── 3. Amplitude from blended volume ──
+    // Blend fast + slow followers for smooth but responsive amplitude.
+    const blendedVol = this.volumeFast * 0.6 + this.volumeSlow * 0.4;
+    const gated = Math.max(0, blendedVol - 0.02);
+    const amplitude = gated > 0 ? Math.sqrt(Math.min(1, gated * 3.5)) : 0;
+
+    // ── 4. Transient detection (for pose advancement speed) ──
+    const transient = Math.max(0, rms - this.prevRms);
+    this.prevRms = rms;
+
+    // ── 5. Advance pose sequence ──
+    // Base rate keeps poses moving during any speech; transients speed it up (gentler)
+    const rate = amplitude > 0.1 ? (0.06 + amplitude * 0.04 + transient * 0.8) : 0;
+    this.poseTimer += rate;
+
+    if (this.poseTimer >= 1.0) {
+      this.poseTimer = 0;
+      const seq = POSE_SEQUENCES[this.seqIdx];
+      this.poseIdx = (this.poseIdx + 1) % seq.length;
+      if (this.poseIdx === 0) {
+        this.seqIdx = Math.floor(this.rand() * POSE_SEQUENCES.length);
       }
-      // Blend toward closed mouth
-      for (const key of Object.keys(this.currentTargets)) {
-        const target = WORD_GAP.targets[key] || 0;
-        this.currentTargets[key] += (target - (this.currentTargets[key] || 0)) * 0.2;
-        result[key] = this.currentTargets[key];
-      }
-      return result;
     }
 
-    // Need a new word?
-    if (this.currentWord.length === 0) {
-      this.pickNextWord();
-    }
+    // ── 6. Build targets from current pose × amplitude ──
+    const seq = POSE_SEQUENCES[this.seqIdx];
+    const pose = POSES[seq[this.poseIdx]];
 
-    // Advance phoneme timer
-    this.phonemeTimer -= dt;
-    if (this.phonemeTimer <= 0 && this.currentWord.length > 0) {
-      this.phonemeIdx++;
-      if (this.phonemeIdx >= this.currentWord.length) {
-        // Word finished — enter gap
-        this.inGap = true;
-        this.gapTimer = 0.04 + this.rand() * 0.12; // 40-160ms gap
-        this.currentWord = [];
-        this.phonemeIdx = 0;
+    for (const k of VISEME_KEYS) {
+      const poseWeight = pose[k] || 0;
+      const target = poseWeight * amplitude;
+      const prev = this.current[k];
+      // Gentle lerp: rise slower (0.18) so lips don't snap open,
+      // fall even softer (0.10) so they glide shut
+      if (target > prev) {
+        this.current[k] = prev + (target - prev) * 0.18;
       } else {
-        this.prevTargets = { ...this.currentTargets };
-        this.phonemeTimer = this.currentWord[this.phonemeIdx].hold * (0.85 + this.rand() * 0.3);
+        this.current[k] = prev + (target - prev) * 0.10;
       }
-    }
-
-    // Interpolate toward current phoneme targets
-    if (this.currentWord.length > 0 && this.phonemeIdx < this.currentWord.length) {
-      const phoneme = this.currentWord[this.phonemeIdx];
-      const allKeys = new Set([
-        ...Object.keys(this.currentTargets),
-        ...Object.keys(phoneme.targets),
-      ]);
-      // Coarticulation blend factor — how fast we transition (0.18 = smooth, 0.4 = snappy)
-      const blend = 0.22;
-      for (const key of allKeys) {
-        const target = phoneme.targets[key] || 0;
-        const current = this.currentTargets[key] || 0;
-        this.currentTargets[key] = current + (target - current) * blend;
-        result[key] = this.currentTargets[key];
-      }
+      if (this.current[k] < 0.002) this.current[k] = 0;
+      result[k] = this.current[k];
     }
 
     return result;
   }
-
-  private pickNextWord() {
-    if (this.wordQueue.length === 0) {
-      // Shuffle and refill
-      this.wordQueue = Array.from({ length: WORD_PATTERNS.length }, (_, i) => i);
-      for (let i = this.wordQueue.length - 1; i > 0; i--) {
-        const j = Math.floor(this.rand() * (i + 1));
-        [this.wordQueue[i], this.wordQueue[j]] = [this.wordQueue[j], this.wordQueue[i]];
-      }
-    }
-    const wordIdx = this.wordQueue.pop()!;
-    this.currentWord = WORD_PATTERNS[wordIdx].map((pi) => PHONEMES[pi]);
-    this.phonemeIdx = 0;
-    this.phonemeTimer = this.currentWord[0].hold * (0.85 + this.rand() * 0.3);
-    this.prevTargets = { ...this.currentTargets };
-  }
 }
 
+/* ── Gesture animation types ── */
+type GestureName =
+  | "Open_Palm"
+  | "Thumb_Up"
+  | "Thumb_Down"
+  | "Victory"
+  | "ILoveYou"
+  | "Closed_Fist"
+  | "Pointing_Up"
+  | null;
+
+/**
+ * Defines target rotations (Euler XYZ in radians) for the right arm bones
+ * to perform each gesture. Left-side bones mirror automatically.
+ * Values are offsets ADDED to the idle rest pose.
+ */
+interface GesturePose {
+  rightArm: [number, number, number];
+  rightForeArm: [number, number, number];
+  rightHand: [number, number, number];
+}
+
+// Desired world-space directions for each arm bone in the idle arms-down pose.
+// Computed at runtime using Three.js's own world transforms for reliability.
+const ARM_DOWN_TARGETS: Record<string, [number, number, number]> = {
+  RightArm:     [0.18, -0.95, 0.12],
+  RightForeArm: [0.06, -0.92, 0.30],
+  RightHand:    [0.03, -0.92, 0.32],
+  LeftArm:      [-0.18, -0.95, 0.12],
+  LeftForeArm:  [-0.06, -0.92, 0.30],
+  LeftHand:     [-0.03, -0.92, 0.32],
+};
+
+// Gesture target poses (right arm — left is mirrored for wave)
+const GESTURE_POSES: Record<string, GesturePose> = {
+  // Wave: arm up, forearm up & out, hand upright
+  Open_Palm: {
+    rightArm: [-0.5, -0.3, -0.8],
+    rightForeArm: [-1.2, 0.4, -0.3],
+    rightHand: [0, 0.2, -0.3],
+  },
+  // Thumbs up: arm slightly forward & up, forearm bent up, hand fist rotated
+  Thumb_Up: {
+    rightArm: [-0.3, -0.2, -0.5],
+    rightForeArm: [-1.5, 0.2, 0],
+    rightHand: [0.1, 0, -0.2],
+  },
+  // Thumbs down: similar but hand flipped
+  Thumb_Down: {
+    rightArm: [-0.1, -0.2, -0.3],
+    rightForeArm: [-0.8, 0.1, 0],
+    rightHand: [3.14, 0, 0],
+  },
+  // Peace sign: arm up, forearm up, fingers up
+  Victory: {
+    rightArm: [-0.4, -0.3, -0.7],
+    rightForeArm: [-1.3, 0.3, -0.2],
+    rightHand: [0, 0.1, -0.2],
+  },
+  // I Love You: same as peace but slightly different angle
+  ILoveYou: {
+    rightArm: [-0.45, -0.25, -0.75],
+    rightForeArm: [-1.35, 0.35, -0.15],
+    rightHand: [0.05, 0.15, -0.25],
+  },
+  // Fist bump: arm forward, fist out
+  Closed_Fist: {
+    rightArm: [-0.5, -0.4, -0.5],
+    rightForeArm: [-1.0, 0.2, 0],
+    rightHand: [0.1, 0, 0],
+  },
+  // Pointing up: arm up, index out
+  Pointing_Up: {
+    rightArm: [-0.4, -0.2, -0.6],
+    rightForeArm: [-1.4, 0.3, -0.1],
+    rightHand: [0, 0, -0.15],
+  },
+};
+
 /* ── 3D Model ── */
-function AvatarModel({ isSpeaking }: { isSpeaking: boolean }) {
+function AvatarModel({
+  isSpeaking,
+  audioDataRef,
+  volumeRef,
+  gestureRef,
+}: {
+  isSpeaking: boolean;
+  audioDataRef: MutableRefObject<(() => Uint8Array | undefined) | undefined>;
+  volumeRef: MutableRefObject<(() => number) | undefined>;
+  gestureRef: MutableRefObject<GestureName>;
+}) {
   const { scene } = useGLTF(AVATAR_URL);
   const morphMeshes = useRef<THREE.Mesh[]>([]);
   const headBone = useRef<THREE.Object3D | null>(null);
-  const lipSync = useRef(new LipSyncEngine());
-  const prevTime = useRef(0);
+  const lipSync = useRef(new AudioLipSync());
+
+  // Arm/hand bone refs
+  const bones = useRef<Record<string, THREE.Object3D | null>>({
+    RightArm: null, RightForeArm: null, RightHand: null,
+    LeftArm: null, LeftForeArm: null, LeftHand: null,
+  });
+  // Store original rest quaternions
+  const restQuats = useRef<Record<string, THREE.Quaternion>>({});
+  // Smoothed gesture blend (0 = rest, 1 = full gesture pose)
+  const gestureBlend = useRef(0);
+  const activeGesture = useRef<GestureName>(null);
+  // Smoothed gesture expression blend for face
+  const gestureExprBlend = useRef(0);
+  // Wave oscillator phase
+  const wavePhase = useRef(0);
 
   useEffect(() => {
     const meshes: THREE.Mesh[] = [];
@@ -237,14 +333,61 @@ function AvatarModel({ isSpeaking }: { isSpeaking: boolean }) {
         }
       }
       if (obj.name === "Head") headBone.current = obj;
+      // Collect arm bones
+      if (obj.name in bones.current) {
+        (bones.current as Record<string, THREE.Object3D | null>)[obj.name] = obj;
+        // Store the original rest quaternion
+        restQuats.current[obj.name] = obj.quaternion.clone();
+      }
     });
     morphMeshes.current = meshes;
+
+    // Compute arm-down rest pose at runtime using Three.js world transforms.
+    // Process bones in hierarchy order (parent first) so child bones
+    // pick up the corrected parent transform.
+    scene.updateMatrixWorld(true);
+
+    const boneOrder = [
+      "RightArm", "RightForeArm", "RightHand",
+      "LeftArm", "LeftForeArm", "LeftHand",
+    ];
+
+    for (const boneName of boneOrder) {
+      const bone = bones.current[boneName];
+      const target = ARM_DOWN_TARGETS[boneName];
+      if (!bone || !bone.parent || !target) continue;
+
+      // Current bone +Y direction in world space
+      const worldQ = new THREE.Quaternion();
+      bone.getWorldQuaternion(worldQ);
+      const currentY = new THREE.Vector3(0, 1, 0).applyQuaternion(worldQ).normalize();
+
+      // Desired direction in world space
+      const desiredDir = new THREE.Vector3(target[0], target[1], target[2]).normalize();
+
+      // World-space delta rotation from current to desired
+      const deltaWorld = new THREE.Quaternion().setFromUnitVectors(currentY, desiredDir);
+
+      // Convert world delta to local delta:
+      // delta_local = parentWorldQ^-1 * delta_world * parentWorldQ
+      const parentWorldQ = new THREE.Quaternion();
+      bone.parent.getWorldQuaternion(parentWorldQ);
+      const parentInv = parentWorldQ.clone().invert();
+      const deltaLocal = parentInv.multiply(deltaWorld).multiply(parentWorldQ);
+
+      // Apply: new_local = delta_local * old_local
+      bone.quaternion.premultiply(deltaLocal);
+
+      // Update world matrices so child bones see the corrected parent
+      bone.updateWorldMatrix(false, true);
+
+      // Store as the new rest quaternion
+      restQuats.current[boneName] = bone.quaternion.clone();
+    }
   }, [scene]);
 
   useFrame(({ clock }) => {
     const t = clock.getElapsedTime();
-    const dt = t - prevTime.current;
-    prevTime.current = t;
 
     // Subtle idle head sway
     if (headBone.current) {
@@ -257,8 +400,12 @@ function AvatarModel({ isSpeaking }: { isSpeaking: boolean }) {
       }
     }
 
-    // Get lip sync targets
-    const lsTargets = lipSync.current.update(dt, isSpeaking);
+    // Get real-time audio data from ElevenLabs
+    const freqData = audioDataRef.current?.() ?? undefined;
+    const vol = volumeRef.current?.() ?? 0;
+
+    // Audio-driven lip sync
+    const lsTargets = lipSync.current.update(freqData, vol, isSpeaking);
 
     morphMeshes.current.forEach((mesh) => {
       const d = mesh.morphTargetDictionary!;
@@ -314,9 +461,136 @@ function AvatarModel({ isSpeaking }: { isSpeaking: boolean }) {
         });
       }
     });
+
+    // ── Gesture arm animation ──
+    const curGesture = gestureRef.current;
+    const BLEND_SPEED = 4.0; // blend in/out per second (~0.25s)
+    const dt = Math.min(clock.getDelta(), 0.05); // cap to avoid jumps
+
+    if (curGesture && GESTURE_POSES[curGesture]) {
+      activeGesture.current = curGesture;
+      gestureBlend.current = Math.min(1, gestureBlend.current + BLEND_SPEED * dt);
+      gestureExprBlend.current = Math.min(1, gestureExprBlend.current + BLEND_SPEED * 0.8 * dt);
+    } else {
+      gestureBlend.current = Math.max(0, gestureBlend.current - BLEND_SPEED * dt);
+      gestureExprBlend.current = Math.max(0, gestureExprBlend.current - BLEND_SPEED * 0.5 * dt);
+      if (gestureBlend.current <= 0) activeGesture.current = null;
+    }
+
+    const blend = gestureBlend.current;
+    const gesture = activeGesture.current;
+    const exprBlend = gestureExprBlend.current;
+
+    // ── Gesture-triggered facial expressions ──
+    if (exprBlend > 0.001) {
+      morphMeshes.current.forEach((mesh) => {
+        const d = mesh.morphTargetDictionary!;
+        const inf = mesh.morphTargetInfluences!;
+
+        // Smile — all gestures get a warm smile
+        const smileAmount = exprBlend * 0.35;
+        if (d.mouthSmileLeft !== undefined)
+          inf[d.mouthSmileLeft] = Math.max(inf[d.mouthSmileLeft], smileAmount);
+        if (d.mouthSmileRight !== undefined)
+          inf[d.mouthSmileRight] = Math.max(inf[d.mouthSmileRight], smileAmount);
+
+        // Cheek squint accompanies smile
+        if (d.cheekSquintLeft !== undefined)
+          inf[d.cheekSquintLeft] = Math.max(inf[d.cheekSquintLeft], exprBlend * 0.2);
+        if (d.cheekSquintRight !== undefined)
+          inf[d.cheekSquintRight] = Math.max(inf[d.cheekSquintRight], exprBlend * 0.2);
+
+        // Gesture-specific expressions
+        if (gesture === "Thumb_Up") {
+          // Big happy smile + raised brows
+          if (d.mouthSmileLeft !== undefined) inf[d.mouthSmileLeft] = exprBlend * 0.5;
+          if (d.mouthSmileRight !== undefined) inf[d.mouthSmileRight] = exprBlend * 0.5;
+          if (d.browInnerUp !== undefined) inf[d.browInnerUp] = exprBlend * 0.15;
+          if (d.browOuterUpLeft !== undefined) inf[d.browOuterUpLeft] = exprBlend * 0.12;
+          if (d.browOuterUpRight !== undefined) inf[d.browOuterUpRight] = exprBlend * 0.12;
+        } else if (gesture === "Open_Palm") {
+          // Friendly smile + slightly raised brows
+          if (d.mouthSmileLeft !== undefined) inf[d.mouthSmileLeft] = exprBlend * 0.4;
+          if (d.mouthSmileRight !== undefined) inf[d.mouthSmileRight] = exprBlend * 0.4;
+          if (d.browOuterUpLeft !== undefined) inf[d.browOuterUpLeft] = exprBlend * 0.1;
+          if (d.browOuterUpRight !== undefined) inf[d.browOuterUpRight] = exprBlend * 0.1;
+        } else if (gesture === "Victory" || gesture === "ILoveYou") {
+          // Playful expression
+          if (d.mouthSmileLeft !== undefined) inf[d.mouthSmileLeft] = exprBlend * 0.45;
+          if (d.mouthSmileRight !== undefined) inf[d.mouthSmileRight] = exprBlend * 0.45;
+          if (d.browInnerUp !== undefined) inf[d.browInnerUp] = exprBlend * 0.1;
+        } else if (gesture === "Thumb_Down") {
+          // Empathetic slight frown
+          if (d.mouthSmileLeft !== undefined) inf[d.mouthSmileLeft] = 0;
+          if (d.mouthSmileRight !== undefined) inf[d.mouthSmileRight] = 0;
+          if (d.browInnerUp !== undefined) inf[d.browInnerUp] = exprBlend * 0.2;
+          if (d.mouthFrownLeft !== undefined) inf[d.mouthFrownLeft] = exprBlend * 0.15;
+          if (d.mouthFrownRight !== undefined) inf[d.mouthFrownRight] = exprBlend * 0.15;
+        }
+      });
+    }
+
+    // ── Always enforce rest quaternions first, then layer animation on top ──
+    for (const name of Object.keys(bones.current)) {
+      const bone = bones.current[name];
+      const rest = restQuats.current[name];
+      if (bone && rest) bone.quaternion.copy(rest);
+    }
+
+    if (blend > 0.001 && gesture) {
+      const pose = GESTURE_POSES[gesture];
+      const tmpQ = new THREE.Quaternion();
+      const targetQ = new THREE.Quaternion();
+
+      // Wave oscillation (only for Open_Palm)
+      if (gesture === "Open_Palm") {
+        wavePhase.current += dt * 5.0;
+      }
+
+      const applyGestureBone = (boneName: string, euler: [number, number, number]) => {
+        const bone = bones.current[boneName];
+        const rest = restQuats.current[boneName];
+        if (!bone || !rest) return;
+
+        const [rx, ry, rz] = euler;
+        // For wave gesture, oscillate the hand rotation
+        const waveOffset =
+          gesture === "Open_Palm" && boneName === "RightHand"
+            ? Math.sin(wavePhase.current) * 0.4
+            : 0;
+
+        tmpQ.setFromEuler(new THREE.Euler(rx, ry + waveOffset, rz));
+        targetQ.copy(rest).multiply(tmpQ);
+        bone.quaternion.slerpQuaternions(rest, targetQ, blend);
+      };
+
+      // Right arm poses
+      applyGestureBone("RightArm", pose.rightArm);
+      applyGestureBone("RightForeArm", pose.rightForeArm);
+      applyGestureBone("RightHand", pose.rightHand);
+    } else if (blend <= 0.001) {
+      // Subtle idle sway — very small so hands look consistent
+      for (const name of Object.keys(bones.current)) {
+        const bone = bones.current[name];
+        const rest = restQuats.current[name];
+        if (!bone || !rest) continue;
+        const isArm = name.includes("Arm") && !name.includes("Fore");
+        const sign = name.startsWith("Right") ? 1 : -1;
+        if (isArm) {
+          const swayQ = new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(
+              Math.sin(t * 0.5 + sign) * 0.008,
+              0,
+              Math.sin(t * 0.35) * 0.005 * sign,
+            ),
+          );
+          bone.quaternion.multiply(swayQ);
+        }
+      }
+    }
   });
 
-  return <primitive object={scene} position={[0, -1.5, 0]} rotation={[-0.04, 0, 0]} />;
+  return <primitive object={scene} position={[0, -1.4, 0]} rotation={[-0.04, 0, 0]} />;
 }
 
 /* ── Loading placeholder ── */
@@ -358,13 +632,28 @@ function FallbackOrb({ isSpeaking }: { isSpeaking: boolean }) {
 }
 
 /* ── Public component ── */
-export default function Avatar3D({ isSpeaking }: { isSpeaking: boolean }) {
+export interface Avatar3DProps {
+  isSpeaking: boolean;
+  getAudioData?: () => Uint8Array | undefined;
+  getVolume?: () => number;
+  gesture?: string | null;
+}
+
+export default function Avatar3D({ isSpeaking, getAudioData, getVolume, gesture }: Avatar3DProps) {
+  // Stable refs so we don't re-render the Canvas when callbacks change
+  const audioDataRef = useRef(getAudioData);
+  const volumeRef = useRef(getVolume);
+  const gestureRef = useRef<GestureName>(null);
+  audioDataRef.current = getAudioData;
+  volumeRef.current = getVolume;
+  gestureRef.current = (gesture as GestureName) ?? null;
+
   return (
     <AvatarErrorBoundary fallback={<FallbackOrb isSpeaking={isSpeaking} />}>
       <Suspense fallback={<Loader />}>
         <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
           <Canvas
-            camera={{ position: [0, 0.25, 1.8], fov: 28 }}
+            camera={{ position: [0, 0.3, 1.8], fov: 28 }}
             gl={{ alpha: true, antialias: true }}
             dpr={[1, 2]}
             onCreated={({ gl }) => {
@@ -379,7 +668,7 @@ export default function Avatar3D({ isSpeaking }: { isSpeaking: boolean }) {
             <directionalLight position={[-1.5, 2, 1]} intensity={0.35} color="#ffeedd" />
             <directionalLight position={[-2, 1, -1]} intensity={0.15} color="#4ade80" />
             <pointLight position={[0, 0.3, 0.9]} intensity={0.3} color="#ffe4c9" />
-            <AvatarModel isSpeaking={isSpeaking} />
+            <AvatarModel isSpeaking={isSpeaking} audioDataRef={audioDataRef} volumeRef={volumeRef} gestureRef={gestureRef} />
           </Canvas>
         </div>
       </Suspense>

@@ -158,6 +158,21 @@ export default function TalkPage() {
 
   const isSpeaking = conversation.isSpeaking;
 
+  // Current gesture name for avatar mirroring
+  const currentGestureName = vision.currentGestures.length > 0
+    ? vision.currentGestures[0].name
+    : null;
+
+  // Audio data getters for lip sync — called every frame by Avatar3D
+  const getAudioData = useCallback(
+    () => conversation.getOutputByteFrequencyData(),
+    [conversation],
+  );
+  const getVolume = useCallback(
+    () => conversation.getOutputVolume(),
+    [conversation],
+  );
+
   const startConversation = useCallback(async () => {
     if (agentState !== "off") return; // prevent double-trigger
     setAgentState("starting");
@@ -243,6 +258,7 @@ export default function TalkPage() {
 
       {/* ── Vision Detection Status Indicator ── */}
       <div
+        className="vision-status-container"
         style={{
           position: "absolute",
           top: 90,
@@ -362,7 +378,7 @@ export default function TalkPage() {
         className={`talk-avatar-container ${conversationStarted ? "" : "cursor-pointer"}`}
         style={{ position: "absolute", inset: 0, zIndex: 1 }}
       >
-        <Avatar3D isSpeaking={isSpeaking} />
+        <Avatar3D isSpeaking={isSpeaking} getAudioData={getAudioData} getVolume={getVolume} gesture={currentGestureName} />
       </div>
 
       {/* ── LAYER 1: Full-width dark gradient at bottom ── */}

@@ -192,6 +192,14 @@
     z-index: 1 !important;
   }
 
+  .vision-status-container {
+    top: 12px !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    align-items: center !important;
+  }
+
   .talk-gradient-overlay {
     position: fixed !important;
     z-index: 2 !important;

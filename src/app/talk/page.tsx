@@ -350,7 +350,7 @@ export default function TalkPage() {
               <path d={`M7 1.5a5.5 5.5 0 0 1 ${5.5 * Math.sin((vision.facePresenceDurationMs / 1500) * Math.PI * 2)} ${5.5 - 5.5 * Math.cos((vision.facePresenceDurationMs / 1500) * Math.PI * 2)}`} fill="none" stroke="#eab308" strokeWidth="2" strokeLinecap="round" />
             </svg>
             <span style={{ fontSize: 10, fontWeight: 600, color: "#eab308" }}>
-              Starting in {Math.max(0, (Math.ceil((1500 - vision.facePresenceDurationMs) / 100) / 10).toFixed(1))}s...
+              Starting in {Math.max(0, Math.ceil((1500 - vision.facePresenceDurationMs) / 100) / 10)}s...
             </span>
           </motion.div>
         )}

@@ -80,6 +80,13 @@ export function useVisionDetection(): VisionState {
   useEffect(() => {
     let cancelled = false;
 
+    // Suppress noisy TensorFlow Lite INFO messages that MediaPipe logs via console.error
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      if (typeof args[0] === "string" && args[0].includes("Created TensorFlow Lite")) return;
+      origError.apply(console, args);
+    };
+
     async function init() {
       try {
         // 1. Load MediaPipe WASM runtime

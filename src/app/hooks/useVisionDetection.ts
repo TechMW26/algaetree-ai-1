@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   FaceDetector,
+  FaceLandmarker,
   GestureRecognizer,
+  ObjectDetector,
   FilesetResolver,
   type FaceDetectorResult,
   type GestureRecognizerResult,
@@ -18,6 +20,8 @@ const GESTURE_LABELS: Record<string, string> = {
   Thumb_Down: "giving a thumbs down",
   Victory: "making a peace sign",
   ILoveYou: "making an I-love-you sign",
+  Namaste: "doing namaste",
+  Photo_Pose: "taking a photo",
 };
 
 export interface GestureInfo {
@@ -38,6 +42,10 @@ export interface VisionState {
   currentGestures: GestureInfo[];
   /** Recent gesture history (last 30 seconds, deduplicated) */
   gestureHistory: GestureInfo[];
+  /** User smile intensity (0-1, from face landmarks) */
+  userSmile: number;
+  /** Whether a phone/cell phone is detected in the frame */
+  phoneDetected: boolean;
   /** Ref to attach to a <video> element */
   videoRef: React.RefObject<HTMLVideoElement | null>;
   /** Whether MediaPipe models are loaded and camera is ready */
@@ -57,16 +65,27 @@ const DETECTION_INTERVAL_MS = 100; // run detection every 100ms (~10fps detectio
 export function useVisionDetection(): VisionState {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const faceDetectorRef = useRef<FaceDetector | null>(null);
+  const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
   const gestureRecognizerRef = useRef<GestureRecognizer | null>(null);
+  const objectDetectorRef = useRef<ObjectDetector | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number>(0);
   const lastDetectionTimeRef = useRef<number>(0);
+  // Run heavy detectors (object detection) at a slower rate
+  const lastHeavyDetectionRef = useRef<number>(0);
 
   // Face tracking
   const faceStartRef = useRef<number | null>(null);
   const [faceDetected, setFaceDetected] = useState(false);
   const [facePresenceDurationMs, setFacePresenceDurationMs] = useState(0);
   const [faceCount, setFaceCount] = useState(0);
+
+  // Smile tracking (from face landmarks)
+  const [userSmile, setUserSmile] = useState(0);
+  const smoothedSmileRef = useRef(0);
+
+  // Phone detection
+  const [phoneDetected, setPhoneDetected] = useState(false);
 
   // Gesture tracking
   const [currentGestures, setCurrentGestures] = useState<GestureInfo[]>([]);
@@ -206,8 +225,87 @@ export function useVisionDetection(): VisionState {
           return;
         }
 
+        // 5. Create FaceLandmarker for smile detection (optional — non-blocking)
+        let faceLandmarker: FaceLandmarker | null = null;
+        try {
+          try {
+            faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath:
+                  "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                delegate: "GPU",
+              },
+              runningMode: "VIDEO",
+              numFaces: 1,
+              outputFaceBlendshapes: true,
+            });
+          } catch {
+            faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath:
+                  "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                delegate: "CPU",
+              },
+              runningMode: "VIDEO",
+              numFaces: 1,
+              outputFaceBlendshapes: true,
+            });
+          }
+        } catch (err) {
+          console.warn("FaceLandmarker init failed (smile detection disabled):", err);
+        }
+
+        if (cancelled) {
+          faceDetector.close();
+          gestureRecognizer.close();
+          faceLandmarker?.close();
+          return;
+        }
+
+        // 6. Create ObjectDetector for phone detection (optional — non-blocking)
+        let objectDetector: ObjectDetector | null = null;
+        try {
+          try {
+            objectDetector = await ObjectDetector.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath:
+                  "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite",
+                delegate: "GPU",
+              },
+              runningMode: "VIDEO",
+              maxResults: 5,
+              scoreThreshold: 0.4,
+              categoryAllowlist: ["cell phone"],
+            });
+          } catch {
+            objectDetector = await ObjectDetector.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath:
+                  "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite",
+                delegate: "CPU",
+              },
+              runningMode: "VIDEO",
+              maxResults: 5,
+              scoreThreshold: 0.4,
+              categoryAllowlist: ["cell phone"],
+            });
+          }
+        } catch (err) {
+          console.warn("ObjectDetector init failed (phone detection disabled):", err);
+        }
+
+        if (cancelled) {
+          faceDetector.close();
+          gestureRecognizer.close();
+          faceLandmarker?.close();
+          objectDetector?.close();
+          return;
+        }
+
         faceDetectorRef.current = faceDetector;
         gestureRecognizerRef.current = gestureRecognizer;
+        faceLandmarkerRef.current = faceLandmarker;
+        objectDetectorRef.current = objectDetector;
 
         setIsReady(true);
       } catch (err) {
@@ -229,6 +327,8 @@ export function useVisionDetection(): VisionState {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       faceDetectorRef.current?.close();
       gestureRecognizerRef.current?.close();
+      faceLandmarkerRef.current?.close();
+      objectDetectorRef.current?.close();
     };
   }, []);
 
@@ -237,6 +337,8 @@ export function useVisionDetection(): VisionState {
     const video = videoRef.current;
     const faceDetector = faceDetectorRef.current;
     const gestureRecognizer = gestureRecognizerRef.current;
+    const faceLandmarker = faceLandmarkerRef.current;
+    const objectDetector = objectDetectorRef.current;
 
     if (
       !video ||
@@ -281,6 +383,28 @@ export function useVisionDetection(): VisionState {
       setFacePresenceDurationMs(0);
     }
 
+    // ── Smile Detection (FaceLandmarker blendshapes) ──
+    if (faceLandmarker && hasFace) {
+      try {
+        const landmarkResult = faceLandmarker.detectForVideo(video, now);
+        if (landmarkResult?.faceBlendshapes?.[0]?.categories) {
+          const cats = landmarkResult.faceBlendshapes[0].categories;
+          // Average of left and right mouth smile blendshapes
+          const smileL = cats.find(c => c.categoryName === "mouthSmileLeft")?.score ?? 0;
+          const smileR = cats.find(c => c.categoryName === "mouthSmileRight")?.score ?? 0;
+          const rawSmile = (smileL + smileR) / 2;
+          // Smooth to avoid jitter
+          smoothedSmileRef.current += (rawSmile - smoothedSmileRef.current) * 0.3;
+          setUserSmile(smoothedSmileRef.current);
+        }
+      } catch {
+        // skip frame
+      }
+    } else if (!hasFace) {
+      smoothedSmileRef.current *= 0.85;
+      setUserSmile(smoothedSmileRef.current);
+    }
+
     // ── Gesture Recognition ──
     let gestureResult: GestureRecognizerResult | null = null;
     try {
@@ -289,13 +413,60 @@ export function useVisionDetection(): VisionState {
       // skip frame
     }
 
+    // ── Namaste Detection from hand landmarks ──
+    // Namaste: both hands detected, palms facing each other, wrists close together near chest
+    let namasteDetected = false;
+    if (gestureResult?.landmarks && gestureResult.landmarks.length >= 2) {
+      const hand0 = gestureResult.landmarks[0];
+      const hand1 = gestureResult.landmarks[1];
+      // Wrist is landmark 0, middle finger tip is landmark 12
+      const wrist0 = hand0[0];
+      const wrist1 = hand1[0];
+      const mid0 = hand0[12];
+      const mid1 = hand1[12];
+      // Distance between wrists (normalized coords 0-1)
+      const wristDist = Math.sqrt((wrist0.x - wrist1.x) ** 2 + (wrist0.y - wrist1.y) ** 2);
+      // Distance between middle fingertips
+      const tipDist = Math.sqrt((mid0.x - mid1.x) ** 2 + (mid0.y - mid1.y) ** 2);
+      // Both hands close together: wrists within ~15% screen, tips within ~10%
+      // Fingertips pointing up: middle finger tip Y < wrist Y (normalized coords: 0=top)
+      const fingersUp0 = mid0.y < wrist0.y;
+      const fingersUp1 = mid1.y < wrist1.y;
+      if (wristDist < 0.18 && tipDist < 0.12 && fingersUp0 && fingersUp1) {
+        namasteDetected = true;
+      }
+    }
+
     const frameGestures: GestureInfo[] = [];
+
+    // Add Namaste as a synthetic gesture (highest priority)
+    if (namasteDetected) {
+      const namasteInfo: GestureInfo = {
+        name: "Namaste",
+        label: GESTURE_LABELS["Namaste"],
+        confidence: 0.9,
+        timestamp: Date.now(),
+      };
+      frameGestures.push(namasteInfo);
+      const history = gestureHistoryRef.current;
+      const isDup = history.some(g => g.name === "Namaste" && Date.now() - g.timestamp < GESTURE_DEDUP_MS);
+      if (!isDup) {
+        gestureHistoryRef.current = [
+          ...history.filter(g => Date.now() - g.timestamp < GESTURE_HISTORY_TTL),
+          namasteInfo,
+        ];
+        setGestureHistory([...gestureHistoryRef.current]);
+      }
+    }
+
     if (gestureResult?.gestures) {
       for (let i = 0; i < gestureResult.gestures.length; i++) {
         const gesture = gestureResult.gestures[i];
         if (gesture.length > 0) {
           const top = gesture[0];
           if (top.categoryName !== "None" && top.score > 0.6) {
+            // Skip individual hand gestures if Namaste is detected (both hands together)
+            if (namasteDetected) continue;
             const info: GestureInfo = {
               name: top.categoryName,
               label:
@@ -325,6 +496,45 @@ export function useVisionDetection(): VisionState {
         }
       }
     }
+
+    // ── Phone Detection (run at slower rate ~3fps to save CPU) ──
+    const HEAVY_INTERVAL = 333;
+    if (objectDetector && now - lastHeavyDetectionRef.current > HEAVY_INTERVAL) {
+      lastHeavyDetectionRef.current = now;
+      try {
+        const objResult = objectDetector.detectForVideo(video, now);
+        const hasPhone = objResult?.detections?.some(
+          d => d.categories?.some(c => c.categoryName === "cell phone" && c.score > 0.4)
+        ) ?? false;
+        setPhoneDetected(hasPhone);
+
+        // If phone detected, add Photo_Pose as synthetic gesture
+        if (hasPhone) {
+          const existsPhoto = frameGestures.some(g => g.name === "Photo_Pose");
+          if (!existsPhoto) {
+            const photoInfo: GestureInfo = {
+              name: "Photo_Pose",
+              label: GESTURE_LABELS["Photo_Pose"],
+              confidence: 0.85,
+              timestamp: Date.now(),
+            };
+            frameGestures.push(photoInfo);
+            const history = gestureHistoryRef.current;
+            const isDup = history.some(g => g.name === "Photo_Pose" && Date.now() - g.timestamp < GESTURE_DEDUP_MS);
+            if (!isDup) {
+              gestureHistoryRef.current = [
+                ...history.filter(g => Date.now() - g.timestamp < GESTURE_HISTORY_TTL),
+                photoInfo,
+              ];
+              setGestureHistory([...gestureHistoryRef.current]);
+            }
+          }
+        }
+      } catch {
+        // skip frame
+      }
+    }
+
     setCurrentGestures(frameGestures);
 
     rafRef.current = requestAnimationFrame(detect);
@@ -349,6 +559,10 @@ export function useVisionDetection(): VisionState {
     faceDetectorRef.current = null;
     gestureRecognizerRef.current?.close();
     gestureRecognizerRef.current = null;
+    faceLandmarkerRef.current?.close();
+    faceLandmarkerRef.current = null;
+    objectDetectorRef.current?.close();
+    objectDetectorRef.current = null;
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
@@ -357,6 +571,8 @@ export function useVisionDetection(): VisionState {
     setFacePresenceDurationMs(0);
     setFaceCount(0);
     setCurrentGestures([]);
+    setUserSmile(0);
+    setPhoneDetected(false);
   }, []);
 
   return {
@@ -365,6 +581,8 @@ export function useVisionDetection(): VisionState {
     faceCount,
     currentGestures,
     gestureHistory,
+    userSmile,
+    phoneDetected,
     videoRef,
     isReady,
     error,

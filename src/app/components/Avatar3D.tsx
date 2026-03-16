@@ -200,6 +200,8 @@ type GestureName =
   | "ILoveYou"
   | "Closed_Fist"
   | "Pointing_Up"
+  | "Namaste"
+  | "Photo_Pose"
   | null;
 
 // Desired world-space directions for each arm bone in the idle arms-down pose.
@@ -227,6 +229,8 @@ const EMOTE_ANIMATIONS: Record<string, string> = {
   ILoveYou:    "/animations/M_Standing_Expressions_007.glb", // heartfelt / appreciative
   Closed_Fist: "/animations/M_Standing_Expressions_008.glb", // fist pump / strong
   Pointing_Up: "/animations/M_Standing_Expressions_010.glb", // pointing / presenting
+  Namaste:     "/animations/M_Standing_Expressions_011.glb", // hand to chest / respectful bow
+  Photo_Pose:  "/animations/M_Standing_Expressions_015.glb", // friendly pose for photo
 };
 
 // How long to keep gesture active after last MediaPipe detection (seconds)
@@ -241,11 +245,13 @@ function AvatarModel({
   audioDataRef,
   volumeRef,
   gestureRef,
+  userSmileRef,
 }: {
   isSpeaking: boolean;
   audioDataRef: MutableRefObject<(() => Uint8Array | undefined) | undefined>;
   volumeRef: MutableRefObject<(() => number) | undefined>;
   gestureRef: MutableRefObject<GestureName>;
+  userSmileRef: MutableRefObject<number>;
 }) {
   const { scene } = useGLTF(AVATAR_URL);
   const morphMeshes = useRef<THREE.Mesh[]>([]);
@@ -466,6 +472,24 @@ function AvatarModel({
           }
         });
       }
+
+      // ── Smile mirroring: when user smiles, avatar smiles back ──
+      const smile = userSmileRef.current;
+      if (smile > 0.05) {
+        const s = Math.min(smile * 1.2, 1); // slightly amplify
+        if (d.mouthSmileLeft !== undefined)
+          inf[d.mouthSmileLeft] = Math.max(inf[d.mouthSmileLeft], s * 0.55);
+        if (d.mouthSmileRight !== undefined)
+          inf[d.mouthSmileRight] = Math.max(inf[d.mouthSmileRight], s * 0.55);
+        if (d.cheekSquintLeft !== undefined)
+          inf[d.cheekSquintLeft] = Math.max(inf[d.cheekSquintLeft], s * 0.25);
+        if (d.cheekSquintRight !== undefined)
+          inf[d.cheekSquintRight] = Math.max(inf[d.cheekSquintRight], s * 0.25);
+        if (d.browOuterUpLeft !== undefined)
+          inf[d.browOuterUpLeft] = Math.max(inf[d.browOuterUpLeft], s * 0.08);
+        if (d.browOuterUpRight !== undefined)
+          inf[d.browOuterUpRight] = Math.max(inf[d.browOuterUpRight], s * 0.08);
+      }
     });
 
     // ── Emote animation system ──
@@ -557,6 +581,19 @@ function AvatarModel({
           if (d.browInnerUp !== undefined) inf[d.browInnerUp] = exprBlend * 0.2;
           if (d.mouthFrownLeft !== undefined) inf[d.mouthFrownLeft] = exprBlend * 0.15;
           if (d.mouthFrownRight !== undefined) inf[d.mouthFrownRight] = exprBlend * 0.15;
+        } else if (gesture === "Namaste") {
+          if (d.mouthSmileLeft !== undefined) inf[d.mouthSmileLeft] = exprBlend * 0.35;
+          if (d.mouthSmileRight !== undefined) inf[d.mouthSmileRight] = exprBlend * 0.35;
+          if (d.browInnerUp !== undefined) inf[d.browInnerUp] = exprBlend * 0.12;
+          if (d.cheekSquintLeft !== undefined) inf[d.cheekSquintLeft] = exprBlend * 0.15;
+          if (d.cheekSquintRight !== undefined) inf[d.cheekSquintRight] = exprBlend * 0.15;
+        } else if (gesture === "Photo_Pose") {
+          if (d.mouthSmileLeft !== undefined) inf[d.mouthSmileLeft] = exprBlend * 0.6;
+          if (d.mouthSmileRight !== undefined) inf[d.mouthSmileRight] = exprBlend * 0.6;
+          if (d.cheekSquintLeft !== undefined) inf[d.cheekSquintLeft] = exprBlend * 0.3;
+          if (d.cheekSquintRight !== undefined) inf[d.cheekSquintRight] = exprBlend * 0.3;
+          if (d.browOuterUpLeft !== undefined) inf[d.browOuterUpLeft] = exprBlend * 0.12;
+          if (d.browOuterUpRight !== undefined) inf[d.browOuterUpRight] = exprBlend * 0.12;
         }
       });
     }
@@ -664,16 +701,19 @@ export interface Avatar3DProps {
   getAudioData?: () => Uint8Array | undefined;
   getVolume?: () => number;
   gesture?: string | null;
+  userSmile?: number;
 }
 
-export default function Avatar3D({ isSpeaking, getAudioData, getVolume, gesture }: Avatar3DProps) {
+export default function Avatar3D({ isSpeaking, getAudioData, getVolume, gesture, userSmile }: Avatar3DProps) {
   // Stable refs so we don't re-render the Canvas when callbacks change
   const audioDataRef = useRef(getAudioData);
   const volumeRef = useRef(getVolume);
   const gestureRef = useRef<GestureName>(null);
+  const userSmileRef = useRef(0);
   audioDataRef.current = getAudioData;
   volumeRef.current = getVolume;
   gestureRef.current = (gesture as GestureName) ?? null;
+  userSmileRef.current = userSmile ?? 0;
 
   return (
     <AvatarErrorBoundary fallback={<FallbackOrb isSpeaking={isSpeaking} />}>
@@ -695,7 +735,7 @@ export default function Avatar3D({ isSpeaking, getAudioData, getVolume, gesture 
             <directionalLight position={[-1.5, 2, 1]} intensity={0.35} color="#ffeedd" />
             <directionalLight position={[-2, 1, -1]} intensity={0.15} color="#4ade80" />
             <pointLight position={[0, 0.3, 0.9]} intensity={0.3} color="#ffe4c9" />
-            <AvatarModel isSpeaking={isSpeaking} audioDataRef={audioDataRef} volumeRef={volumeRef} gestureRef={gestureRef} />
+            <AvatarModel isSpeaking={isSpeaking} audioDataRef={audioDataRef} volumeRef={volumeRef} gestureRef={gestureRef} userSmileRef={userSmileRef} />
           </Canvas>
         </div>
       </Suspense>

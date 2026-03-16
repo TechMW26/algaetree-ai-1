@@ -134,7 +134,9 @@ export default function TalkPage() {
     const waved = gestures.some(g => g.name === "Open_Palm" && Date.now() - g.timestamp < 10_000);
     const thumbsUp = gestures.some(g => g.name === "Thumb_Up" && Date.now() - g.timestamp < 10_000);
     const peace = gestures.some(g => g.name === "Victory" && Date.now() - g.timestamp < 10_000);
+    const namaste = gestures.some(g => g.name === "Namaste" && Date.now() - g.timestamp < 10_000);
 
+    if (namaste) return "Namaste! 🙏 Welcome! I'm Angella, your AlgaeTree sustainability guide. It's wonderful to greet you! How can I help you learn about the AlgaeTree today?";
     if (waved) return "Hey there! I saw you waving — welcome! I'm Angella, your AlgaeTree sustainability guide. How can I help you today?";
     if (thumbsUp) return "Hey! Great to see that thumbs up! I'm Angella, ready to tell you all about how the AlgaeTree captures carbon and cleans the air. What would you like to know?";
     if (peace) return "Peace! Welcome! I'm Angella, your AlgaeTree guide. I'd love to tell you about how microalgae are helping clean our air. What are you curious about?";
@@ -318,7 +320,7 @@ export default function TalkPage() {
               exit={{ opacity: 0, x: 20, scale: 0.8 }}
             >
               <span style={{ fontSize: 12 }}>
-                {g.name === "Open_Palm" ? "👋" : g.name === "Thumb_Up" ? "👍" : g.name === "Thumb_Down" ? "👎" : g.name === "Victory" ? "✌️" : g.name === "ILoveYou" ? "🤟" : g.name === "Closed_Fist" ? "✊" : g.name === "Pointing_Up" ? "☝️" : "🖐️"}
+                {g.name === "Open_Palm" ? "👋" : g.name === "Thumb_Up" ? "👍" : g.name === "Thumb_Down" ? "👎" : g.name === "Victory" ? "✌️" : g.name === "ILoveYou" ? "🤟" : g.name === "Closed_Fist" ? "✊" : g.name === "Pointing_Up" ? "☝️" : g.name === "Namaste" ? "🙏" : g.name === "Photo_Pose" ? "📸" : "🖐️"}
               </span>
               <span style={{ fontSize: 10, fontWeight: 600, color: "#c084fc" }}>
                 {g.label}
@@ -378,7 +380,7 @@ export default function TalkPage() {
         className={`talk-avatar-container ${conversationStarted ? "" : "cursor-pointer"}`}
         style={{ position: "absolute", inset: 0, zIndex: 1 }}
       >
-        <Avatar3D isSpeaking={isSpeaking} getAudioData={getAudioData} getVolume={getVolume} gesture={currentGestureName} />
+        <Avatar3D isSpeaking={isSpeaking} getAudioData={getAudioData} getVolume={getVolume} gesture={currentGestureName} userSmile={vision.userSmile} />
       </div>
 
       {/* ── LAYER 1: Full-width dark gradient at bottom ── */}

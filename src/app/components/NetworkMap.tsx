@@ -48,10 +48,9 @@ const PODS: Pod[] = [
 const INDIA_GEOJSON_URL =
   "https://raw.githubusercontent.com/datameet/maps/master/Country/india-composite.geojson";
 
-// geoBoundaries gbOpen ADM0 metadata endpoint — returns JSON with `gjDownloadURL` to the
-// high-resolution country boundary GeoJSON.
-const GEO_BOUNDARIES_API = (iso3: string) =>
-  `https://www.geoboundaries.org/api/current/gbOpen/${iso3}/ADM0/`;
+// High-detail UAE boundary (mledoze/countries — ~448 vertices, CORS-friendly via raw.githubusercontent.com).
+const UAE_GEOJSON_URL =
+  "https://raw.githubusercontent.com/mledoze/countries/master/data/are.geo.json";
 
 export default function NetworkMap() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -166,8 +165,11 @@ export default function NetworkMap() {
     // Highlighted-country outlines. Bounds are aggregated for dynamic centering.
     const highlightedBounds = L.latLngBounds([]);
     let initialFitDone = false;
+    let cancelled = false;
+    const abortController = new AbortController();
 
     const fitToHighlights = (animate = true) => {
+      if (cancelled) return;
       if (highlightedBounds.isValid()) {
         map.fitBounds(highlightedBounds, {
           padding: [60, 60],
@@ -178,9 +180,12 @@ export default function NetworkMap() {
     };
 
     const addCountryOutline = (url: string) => {
-      fetch(url)
+      fetch(url, { signal: abortController.signal })
         .then((r) => r.json())
         .then((data) => {
+          // The component may have unmounted while the fetch was in flight; if so the map's
+          // container has been torn down and Leaflet's `addTo` would crash on `appendChild`.
+          if (cancelled) return;
           const layer = L.geoJSON(data, {
             style: {
               color: "#22c55e",
@@ -198,23 +203,14 @@ export default function NetworkMap() {
             fitToHighlights(true);
           }
         })
-        .catch((err) => console.error("GeoJSON load failed:", err));
-    };
-
-    // Resolve a geoBoundaries ISO3 code to its high-resolution GeoJSON URL, then add it.
-    const addGeoBoundariesOutline = (iso3: string) => {
-      fetch(GEO_BOUNDARIES_API(iso3))
-        .then((r) => r.json())
-        .then((meta) => {
-          const url: string | undefined = meta?.gjDownloadURL;
-          if (!url) throw new Error(`No gjDownloadURL for ${iso3}`);
-          return addCountryOutline(url);
-        })
-        .catch((err) => console.error("geoBoundaries load failed:", iso3, err));
+        .catch((err) => {
+          if ((err as Error)?.name === "AbortError") return;
+          console.error("GeoJSON load failed:", err);
+        });
     };
 
     addCountryOutline(INDIA_GEOJSON_URL);
-    addGeoBoundariesOutline("ARE");
+    addCountryOutline(UAE_GEOJSON_URL);
 
     // Recenter custom control — fits the map to highlighted countries.
     const RecenterControl = L.Control.extend({
@@ -300,6 +296,8 @@ export default function NetworkMap() {
     });
 
     return () => {
+      cancelled = true;
+      abortController.abort();
       themeObserver.disconnect();
       map.off("zoomend", updateLayerByZoom);
       map.remove();

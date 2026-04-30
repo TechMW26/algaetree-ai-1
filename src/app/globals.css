@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 @layer base {
-  :root {
+  :root,
+  [data-theme="dark"] {
     --bg: #060b14;
     --surface: rgba(255, 255, 255, 0.06);
     --surface-hover: rgba(255, 255, 255, 0.1);
@@ -16,9 +17,50 @@
     --text-1: rgba(255, 255, 255, 0.95);
     --text-2: rgba(255, 255, 255, 0.6);
     --text-3: rgba(255, 255, 255, 0.35);
+
+    /* Themed neutral tokens used in inline styles */
+    --track: rgba(255, 255, 255, 0.05);
+    --track-strong: rgba(255, 255, 255, 0.07);
+    --mini-bg: rgba(255, 255, 255, 0.04);
+    --row-divider: rgba(255, 255, 255, 0.05);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+    --card-shadow: none;
+    --card-shadow-hover: none;
+    --orb-1: rgba(34, 197, 94, 0.25);
+    --orb-2: rgba(56, 189, 248, 0.20);
+    --orb-3: rgba(168, 85, 247, 0.12);
+    --talk-overlay: rgba(5, 10, 8, 1);
+    --color-scheme: dark;
+  }
+
+  [data-theme="light"] {
+    --bg: #f6f8fb;
+    --surface: #ffffff;
+    --surface-hover: #ffffff;
+    --border: rgba(15, 23, 42, 0.10);
+    --border-hover: rgba(15, 23, 42, 0.18);
+    --highlight: transparent;
+    --text-1: #0f172a;
+    --text-2: rgba(15, 23, 42, 0.68);
+    --text-3: rgba(15, 23, 42, 0.45);
+
+    --track: rgba(15, 23, 42, 0.06);
+    --track-strong: rgba(15, 23, 42, 0.10);
+    --mini-bg: rgba(15, 23, 42, 0.04);
+    --row-divider: rgba(15, 23, 42, 0.06);
+    --scrollbar-thumb: rgba(15, 23, 42, 0.2);
+    --card-shadow: none;
+    --card-shadow-hover: none;
+    --orb-1: rgba(34, 197, 94, 0.18);
+    --orb-2: rgba(56, 189, 248, 0.14);
+    --orb-3: rgba(168, 85, 247, 0.10);
+    --talk-overlay: rgba(246, 248, 251, 1);
+    --color-scheme: light;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { color-scheme: var(--color-scheme); }
 
   html, body {
     height: 100%;
@@ -30,7 +72,7 @@
 
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 99px; }
 }
 
 /* ===== KEYFRAMES (outside layers for global availability) ===== */
@@ -92,9 +134,9 @@
     position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.4;
     animation: drift 25s ease-in-out infinite;
   }
-  .ambient-bg .orb-1 { width: 600px; height: 600px; top: -10%; left: -5%; background: rgba(34,197,94,0.25); }
-  .ambient-bg .orb-2 { width: 500px; height: 500px; bottom: -15%; right: -5%; background: rgba(56,189,248,0.2); animation-delay: -8s; }
-  .ambient-bg .orb-3 { width: 400px; height: 400px; top: 50%; left: 60%; background: rgba(168,85,247,0.12); animation-delay: -16s; }
+  .ambient-bg .orb-1 { width: 600px; height: 600px; top: -10%; left: -5%; background: var(--orb-1); }
+  .ambient-bg .orb-2 { width: 500px; height: 500px; bottom: -15%; right: -5%; background: var(--orb-2); animation-delay: -8s; }
+  .ambient-bg .orb-3 { width: 400px; height: 400px; top: 50%; left: 60%; background: var(--orb-3); animation-delay: -16s; }
 
   /* ===== ANIMATION CLASSES ===== */
   .float-anim { animation: float 5s ease-in-out infinite; }
@@ -115,7 +157,7 @@
     border-radius: 24px;
     backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);
-    box-shadow: 0 4px 30px rgba(0,0,0,0.3), inset 0 1px 0 var(--highlight);
+    box-shadow: none;
     overflow: hidden;
     transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
   }
@@ -136,13 +178,19 @@
   .card:hover {
     transform: translateY(-3px);
     border-color: var(--border-hover);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.4), inset 0 1px 0 var(--highlight);
+    box-shadow: none;
+  }
+
+  [data-theme="light"] .card,
+  [data-theme="light"] .card:hover {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   /* ===== PROGRESS BAR ===== */
   .bar-track {
     width: 100%; height: 8px;
-    background: rgba(255,255,255,0.06);
+    background: var(--track);
     border-radius: 99px; overflow: hidden;
   }
   .bar-fill {

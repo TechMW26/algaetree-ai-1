@@ -3,11 +3,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useConversation } from "@elevenlabs/react";
 import { useLiveData } from "../hooks/useLiveData";
 import { useVisionDetection, buildGestureContext } from "../hooks/useVisionDetection";
 import type { GestureInfo } from "../hooks/useVisionDetection";
+import ThemeToggle from "../components/ThemeToggle";
 
 const Avatar3D = dynamic(() => import("../components/Avatar3D"), { ssr: false });
 
@@ -286,62 +288,6 @@ export default function TalkPage() {
           alignItems: "flex-end",
         }}
       >
-        {/* Face detection indicator */}
-        <motion.div
-          className="flex items-center rounded-full"
-          style={{
-            gap: 6,
-            padding: "6px 12px",
-            background: vision.faceDetected ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.05)",
-            border: `1px solid ${vision.faceDetected ? "rgba(34,197,94,0.3)" : "rgba(255,255,255,0.08)"}`,
-            backdropFilter: "blur(12px)",
-          }}
-          animate={{ opacity: vision.isReady ? 1 : 0.4 }}
-        >
-          <span
-            className="rounded-full"
-            style={{
-              width: 6,
-              height: 6,
-              background: vision.faceDetected ? "#22c55e" : "#6b7280",
-              boxShadow: vision.faceDetected ? "0 0 8px #22c55e" : "none",
-            }}
-          />
-          <span style={{ fontSize: 10, fontWeight: 600, color: vision.faceDetected ? "#4ade80" : "var(--text-3)" }}>
-            {!vision.isReady
-              ? "Loading vision..."
-              : vision.faceDetected
-              ? `Face detected${vision.faceCount > 1 ? ` (${vision.faceCount})` : ""}`
-              : "No face detected"}
-          </span>
-        </motion.div>
-
-        {/* Gesture indicators */}
-        <AnimatePresence>
-          {vision.currentGestures.map((g) => (
-            <motion.div
-              key={g.name}
-              className="flex items-center rounded-full"
-              style={{
-                gap: 6,
-                padding: "6px 12px",
-                background: "rgba(168,85,247,0.12)",
-                border: "1px solid rgba(168,85,247,0.3)",
-                backdropFilter: "blur(12px)",
-              }}
-              initial={{ opacity: 0, x: 20, scale: 0.8 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: 20, scale: 0.8 }}
-            >
-              <span style={{ fontSize: 12 }}>
-                {g.name === "Open_Palm" ? "👋" : g.name === "Thumb_Up" ? "👍" : g.name === "Thumb_Down" ? "👎" : g.name === "Victory" ? "✌️" : g.name === "ILoveYou" ? "🤟" : g.name === "Closed_Fist" ? "✊" : g.name === "Pointing_Up" ? "☝️" : g.name === "Namaste" ? "🙏" : g.name === "Photo_Pose" ? "📸" : "🖐️"}
-              </span>
-              <span style={{ fontSize: 10, fontWeight: 600, color: "#c084fc" }}>
-                {g.label}
-              </span>
-            </motion.div>
-          ))}
-        </AnimatePresence>
 
         {/* Waiting for face indicator (when agent is off) */}
         {agentState === "off" && vision.isReady && !vision.faceDetected && (
@@ -360,30 +306,6 @@ export default function TalkPage() {
             transition={{ duration: 2, repeat: Infinity }}
           >
             Step in front of camera to start
-          </motion.div>
-        )}
-
-        {/* Face detected progress (counting to 2s) */}
-        {agentState === "off" && vision.faceDetected && vision.facePresenceDurationMs < 1500 && (
-          <motion.div
-            className="flex items-center rounded-full"
-            style={{
-              gap: 6,
-              padding: "6px 12px",
-              background: "rgba(234,179,8,0.12)",
-              border: "1px solid rgba(234,179,8,0.3)",
-              backdropFilter: "blur(12px)",
-            }}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" style={{ animation: "spin 1.5s linear infinite" }}>
-              <circle cx="7" cy="7" r="5.5" fill="none" stroke="rgba(234,179,8,0.2)" strokeWidth="2" />
-              <path d={`M7 1.5a5.5 5.5 0 0 1 ${5.5 * Math.sin((vision.facePresenceDurationMs / 1500) * Math.PI * 2)} ${5.5 - 5.5 * Math.cos((vision.facePresenceDurationMs / 1500) * Math.PI * 2)}`} fill="none" stroke="#eab308" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            <span style={{ fontSize: 10, fontWeight: 600, color: "#eab308" }}>
-              Starting in {Math.max(0, Math.ceil((1500 - vision.facePresenceDurationMs) / 100) / 10)}s...
-            </span>
           </motion.div>
         )}
       </div>
@@ -406,7 +328,7 @@ export default function TalkPage() {
           left: 0,
           right: 0,
           height: "50%",
-          background: "linear-gradient(to top, rgba(5,10,8,0.97) 0%, rgba(5,10,8,0.85) 25%, rgba(5,10,8,0.5) 55%, transparent 100%)",
+          background: "linear-gradient(to top, var(--talk-overlay) 0%, color-mix(in srgb, var(--talk-overlay) 85%, transparent) 25%, color-mix(in srgb, var(--talk-overlay) 50%, transparent) 55%, transparent 100%)",
           pointerEvents: "none",
           zIndex: 2,
         }}
@@ -429,8 +351,8 @@ export default function TalkPage() {
             className="flex items-center justify-center rounded-xl transition-colors cursor-pointer"
             style={{
               width: 36, height: 36,
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.1)",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
               color: "var(--text-3)",
             }}
           >
@@ -439,25 +361,15 @@ export default function TalkPage() {
             </svg>
           </button>
           <div
-            className="rounded-full flex items-center justify-center"
-            style={{ width: 36, height: 36, background: "rgba(34,197,94,0.15)" }}
+            className="rounded-full flex items-center justify-center overflow-hidden"
+            style={{ width: 36, height: 36 }}
           >
-            <span style={{ fontSize: 18 }}>🌿</span>
+            <Image src="/favicon.png" alt="AlgaeTree" width={36} height={36} style={{ borderRadius: 8 }} />
           </div>
           <span className="font-bold" style={{ fontSize: 18 }}>AlgaeTree</span>
         </div>
 
-        {conversationStarted && (
-          <motion.div
-            className="flex items-center rounded-full"
-            style={{ gap: 8, padding: "8px 16px", background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-          >
-            <span className="rounded-full animate-pulse" style={{ width: 8, height: 8, background: "#22c55e" }} />
-            <span className="font-medium" style={{ fontSize: 12, color: "#4ade80" }}>Live Conversation</span>
-          </motion.div>
-        )}
+        <ThemeToggle />
       </motion.nav>
 
       {/* ── LAYER 3: Side panels (hidden on mobile) ── */}

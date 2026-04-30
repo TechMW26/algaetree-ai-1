@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { useLiveData } from "./hooks/useLiveData";
+import ThemeToggle from "./components/ThemeToggle";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -24,7 +25,7 @@ function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint 
   const r = 90;
   const circumHalf = Math.PI * r;
   const dashLen = pct * circumHalf;
-  const trackColor = "rgba(255,255,255,0.07)";
+  const trackColor = "var(--track-strong)";
 
   return (
     <motion.div
@@ -40,11 +41,6 @@ function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint 
       variants={rise}
       whileHover={{ scale: 1.02, transition: { duration: 0.25 } }}
     >
-      {/* Subtle corner glow */}
-      <div style={{
-        position: "absolute", top: -40, right: -40, width: 120, height: 120,
-        borderRadius: "50%", background: `${color}12`, filter: "blur(40px)", pointerEvents: "none",
-      }} />
       <div style={{ position: "relative", width: "88%", aspectRatio: "280 / 155" }}>
         <svg width="100%" height="100%" viewBox="-30 -15 280 155" preserveAspectRatio="xMidYMid meet" style={{ overflow: "visible" }}>
           {/* Track */}
@@ -66,11 +62,10 @@ function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint 
             initial={{ strokeDashoffset: circumHalf }}
             animate={{ strokeDashoffset: circumHalf - dashLen }}
             transition={{ duration: 1.6, delay, ease: [0.25, 0.46, 0.45, 0.94] }}
-            style={{ filter: `drop-shadow(0 0 14px ${color}60)` }}
           />
           {/* Center value as SVG text for proper scaling */}
-          <text x="110" y="112" textAnchor="middle" fill="#fff" fontWeight="800" fontSize="52" fontFamily="inherit">{value}</text>
-          <text x="110" y="138" textAnchor="middle" fill="var(--text-3)" fontWeight="600" fontSize="16" fontFamily="inherit">{unit}</text>
+          <text x="110" y="112" textAnchor="middle" style={{ fill: "var(--text-2)" }} fontWeight="400" fontSize="52" fontFamily="inherit">{value}</text>
+          <text x="110" y="138" textAnchor="middle" style={{ fill: "var(--text-3)" }} fontWeight="600" fontSize="16" fontFamily="inherit">{unit}</text>
         </svg>
       </div>
       <div className="flex items-center" style={{ gap: 8, marginTop: 6, flexShrink: 0 }}>
@@ -95,7 +90,7 @@ function BarChart({ bars, delay = 0 }: {
             <div
               style={{
                 width: "100%", maxWidth: 36, height: 110, borderRadius: 10,
-                background: "rgba(255,255,255,0.05)",
+                background: "var(--track)",
                 position: "relative", overflow: "hidden",
                 display: "flex", alignItems: "flex-end",
               }}
@@ -224,12 +219,7 @@ export default function DashboardPage() {
         transition={{ duration: 0.4 }}
       >
         <div className="flex items-center" style={{ gap: 12 }}>
-          <div
-            className="rounded-full flex items-center justify-center"
-            style={{ width: 36, height: 36, background: "rgba(34,197,94,0.15)" }}
-          >
-            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.9C15.5 4.9 17 3.5 19 2c1 2 2 4.5 2 8 0 5.5-4.5 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
-          </div>
+          <Image src="/favicon.png" alt="AlgaeTree" width="36" height="36" style={{ borderRadius: 8 }} />
           <span className="font-bold" style={{ fontSize: 18 }}>AlgaeTree</span>
         </div>
 
@@ -244,7 +234,7 @@ export default function DashboardPage() {
                 borderRadius: 14,
                 fontSize: 14,
                 background: i === activeTab ? "rgba(34,197,94,0.12)" : "transparent",
-                color: i === activeTab ? "#4ade80" : "var(--text-3)",
+                color: i === activeTab ? "#16a34a" : "var(--text-2)",
                 border: i === activeTab ? "1px solid rgba(34,197,94,0.2)" : "1px solid transparent",
               }}
             >
@@ -268,7 +258,10 @@ export default function DashboardPage() {
           </motion.div>
         </button>
 
-        <span className="font-semibold tabular-nums dash-time" style={{ fontSize: 15, color: "var(--text-3)" }}>{time}</span>
+        <div className="flex items-center" style={{ gap: 14 }}>
+          <span className="font-semibold tabular-nums dash-time" style={{ fontSize: 15, color: "var(--text-3)" }}>{time}</span>
+          <ThemeToggle />
+        </div>
       </motion.nav>
 
       {/* ────── MOBILE MENU OVERLAY ────── */}
@@ -388,7 +381,7 @@ export default function DashboardPage() {
               </motion.button>
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
                 {[{ l: "VOLUME", v: `${d.volume}L` }, { l: "CYCLE", v: `${d.cycle}d` }, { l: "MAINT.", v: `${d.maint}d` }].map(s => (
-                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)" }}>
+                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "var(--mini-bg)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
                     <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
                   </div>
@@ -475,7 +468,7 @@ export default function DashboardPage() {
               {/* Env mini stats */}
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
                 {[{ l: "UV INDEX", v: `${d.uvIndex}` }, { l: "CO₂", v: `${d.co2Ambient} ppm` }, { l: "LIGHT", v: `${(d.lightIntensity / 1000).toFixed(1)}k lux` }].map(s => (
-                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)" }}>
+                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "var(--mini-bg)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
                     <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
                   </div>
@@ -549,7 +542,7 @@ export default function DashboardPage() {
               {/* Performance mini stats */}
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
                 {[{ l: "ENERGY", v: `${d.energyUsage}W` }, { l: "WATER", v: `${d.waterUsage} L/h` }, { l: "O₂ PROD", v: `${d.oxygenProd} g/h` }].map(s => (
-                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)" }}>
+                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "var(--mini-bg)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
                     <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
                   </div>
@@ -620,7 +613,7 @@ export default function DashboardPage() {
               {/* System mini stats */}
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
                 {[{ l: "FIRMWARE", v: d.firmwareVersion }, { l: "CALIBRATED", v: d.lastCalibration }, { l: "UPTIME", v: d.uptime }].map(s => (
-                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "rgba(255,255,255,0.04)" }}>
+                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "var(--mini-bg)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
                     <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
                   </div>
@@ -644,7 +637,7 @@ export default function DashboardPage() {
                 { l: "Network", v: d.networkUp ? "Connected" : "Disconnected", color: d.networkUp ? "#4ade80" : "#f97316" },
                 { l: "Disk Usage", v: `${d.diskUsage}%`, color: "#a855f7" },
               ].map((item, i) => (
-                <div key={item.l} className="flex items-center justify-between" style={{ padding: "12px 0", borderBottom: i < 3 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                <div key={item.l} className="flex items-center justify-between" style={{ padding: "12px 0", borderBottom: i < 3 ? "1px solid var(--row-divider)" : "none" }}>
                   <span style={{ fontSize: 14, color: "var(--text-2)" }}>{item.l}</span>
                   <div className="flex items-center" style={{ gap: 8 }}>
                     <span className="font-bold" style={{ fontSize: 14, color: item.color }}>{item.v}</span>

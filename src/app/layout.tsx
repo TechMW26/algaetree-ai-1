@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import SplashScreen from "./components/SplashScreen";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -40,10 +41,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="light" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}`,
+          }}
+        />
+      </head>
       <body
         className={`${inter.variable} antialiased`}
       >
+        <SplashScreen />
         {children}
         <script
           dangerouslySetInnerHTML={{

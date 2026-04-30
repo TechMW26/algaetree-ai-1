@@ -346,7 +346,7 @@ export default function TalkPage() {
             onClick={async () => {
               vision.cleanup();
               if (conversationStarted) await conversation.endSession().catch(() => {});
-              router.push("/");
+              router.push("/dashboard");
             }}
             className="flex items-center justify-center rounded-xl transition-colors cursor-pointer"
             style={{

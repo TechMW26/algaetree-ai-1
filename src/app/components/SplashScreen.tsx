@@ -60,7 +60,7 @@ export default function SplashScreen() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: "6px",
+        gap: "1em",
         opacity: fading ? 0 : 1,
         transition: `opacity ${FADE_DURATION_MS}ms ease`,
         pointerEvents: fading ? "none" : "auto",
@@ -101,7 +101,7 @@ export default function SplashScreen() {
           height: "auto",
           userSelect: "none",
           opacity: 0,
-          animation: "splashLogoIn 1000ms cubic-bezier(0.22, 1, 0.36, 1) 250ms forwards",
+          animation: "splashLogoIn 1000ms cubic-bezier(0.22, 1, 0.36, 1) 800ms forwards",
         }}
         draggable={false}
       />

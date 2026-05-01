@@ -46,6 +46,44 @@ const INDIA_GEOJSON_URL =
 const UAE_GEOJSON_URL =
   "https://raw.githubusercontent.com/mledoze/countries/master/data/are.geo.json";
 
+const MAP_ASSET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+type CachedMapAsset = {
+  timestamp: number;
+  data: unknown;
+};
+
+function getMapAssetCacheKey(url: string): string {
+  return `map-asset-cache:${url}`;
+}
+
+function readCachedMapAsset(url: string): unknown | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(getMapAssetCacheKey(url));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedMapAsset;
+    if (!parsed?.timestamp || !parsed?.data) return null;
+    if (Date.now() - parsed.timestamp > MAP_ASSET_TTL_MS) {
+      localStorage.removeItem(getMapAssetCacheKey(url));
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedMapAsset(url: string, data: unknown): void {
+  if (typeof window === "undefined") return;
+  try {
+    const payload: CachedMapAsset = { timestamp: Date.now(), data };
+    localStorage.setItem(getMapAssetCacheKey(url), JSON.stringify(payload));
+  } catch {
+    // Ignore quota and serialization failures; network fetch still works.
+  }
+}
+
 export default function NetworkMap() {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -175,28 +213,39 @@ export default function NetworkMap() {
     };
 
     const addCountryOutline = (url: string) => {
+      const renderOutline = (data: unknown) => {
+        // The component may have unmounted while the fetch was in flight; if so the map's
+        // container has been torn down and Leaflet's `addTo` would crash on `appendChild`.
+        if (cancelled) return;
+        const layer = L.geoJSON(data as GeoJSON.GeoJsonObject, {
+          style: {
+            color: "#22c55e",
+            weight: 2,
+            opacity: 0.8,
+            fillColor: "#22c55e",
+            fillOpacity: 0.05,
+          },
+        }).addTo(map);
+        highlightedBounds.extend(layer.getBounds());
+        if (!initialFitDone) {
+          initialFitDone = true;
+          fitToHighlights(false);
+        } else {
+          fitToHighlights(true);
+        }
+      };
+
+      const cached = readCachedMapAsset(url);
+      if (cached) {
+        renderOutline(cached);
+        return;
+      }
+
       fetch(url, { signal: abortController.signal })
         .then((r) => r.json())
         .then((data) => {
-          // The component may have unmounted while the fetch was in flight; if so the map's
-          // container has been torn down and Leaflet's `addTo` would crash on `appendChild`.
-          if (cancelled) return;
-          const layer = L.geoJSON(data, {
-            style: {
-              color: "#22c55e",
-              weight: 2,
-              opacity: 0.8,
-              fillColor: "#22c55e",
-              fillOpacity: 0.05,
-            },
-          }).addTo(map);
-          highlightedBounds.extend(layer.getBounds());
-          if (!initialFitDone) {
-            initialFitDone = true;
-            fitToHighlights(false);
-          } else {
-            fitToHighlights(true);
-          }
+          writeCachedMapAsset(url, data);
+          renderOutline(data);
         })
         .catch((err) => {
           if ((err as Error)?.name === "AbortError") return;

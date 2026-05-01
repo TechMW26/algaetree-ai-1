@@ -4,8 +4,8 @@
   :root,
   [data-theme="dark"] {
     --bg: #060b14;
-    --surface: rgba(255, 255, 255, 0.06);
-    --surface-hover: rgba(255, 255, 255, 0.1);
+    --surface: #1c2233;
+    --surface-hover: #222b3d;
     --border: rgba(255, 255, 255, 0.1);
     --border-hover: rgba(255, 255, 255, 0.2);
     --highlight: rgba(255, 255, 255, 0.15);
@@ -35,8 +35,8 @@
 
   [data-theme="light"] {
     --bg: #f6f8fb;
-    --surface: #ffffff;
-    --surface-hover: #ffffff;
+    --surface: #f7f8fa;
+    --surface-hover: #f0f2f5;
     --border: rgba(15, 23, 42, 0.10);
     --border-hover: rgba(15, 23, 42, 0.18);
     --highlight: transparent;
@@ -128,6 +128,7 @@
 @layer components {
   /* ===== AMBIENT BG ===== */
   .ambient-bg {
+    display: none;
     position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
   }
   .ambient-bg .orb {

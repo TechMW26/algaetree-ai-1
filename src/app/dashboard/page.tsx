@@ -37,7 +37,7 @@ function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint 
       style={{
         padding: "12px 8px 14px",
         flex: 1,
-        background: `linear-gradient(145deg, ${tint}, var(--surface))`,
+        background: "var(--surface)",
         overflow: "visible",
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ['--card-tint' as any]: `${color}18`,
@@ -161,6 +161,87 @@ function AnimBar({ pct, color, delay = 0 }: { pct: number; color: string; delay?
   );
 }
 
+/* ── AQI Arc Gauge ── */
+const AQI_BANDS = [
+  { from: 0,   to: 50,  color: "#86efac", label: "Good" },
+  { from: 50,  to: 100, color: "#bef264", label: "Moderate" },
+  { from: 100, to: 150, color: "#fde68a", label: "Sensitive Groups" },
+  { from: 150, to: 200, color: "#fdba74", label: "Unhealthy" },
+  { from: 200, to: 300, color: "#fca5a5", label: "Very Unhealthy" },
+  { from: 300, to: 500, color: "#c4b5fd", label: "Hazardous" },
+] as const;
+
+function AQIGauge({ value }: { value: number }) {
+  // semicircle: cx/cy is the pivot at the bottom of the arc area
+  const cx = 150, cy = 138, r = 96, sw = 28, maxAQI = 500;
+  // angle: val=0 → π (left), val=maxAQI → 0 (right)
+  const toXY = (val: number, radius = r) => {
+    const a = Math.PI * (1 - Math.min(Math.max(val, 0), maxAQI) / maxAQI);
+    return { x: +(cx + radius * Math.cos(a)).toFixed(3), y: +(cy - radius * Math.sin(a)).toFixed(3) };
+  };
+  const segPath = (from: number, to: number, gap = maxAQI * 0.014) => {
+    const f = from > 0 ? from + gap : from;
+    const t = to < maxAQI ? to - gap : to;
+    const p1 = toXY(f), p2 = toXY(t);
+    const lg = (t - f) / maxAQI > 0.5 ? 1 : 0;
+    return `M ${p1.x} ${p1.y} A ${r} ${r} 0 ${lg} 1 ${p2.x} ${p2.y}`;
+  };
+  const clampedVal = Math.min(Math.max(value, 0), maxAQI);
+  const currentBand = [...AQI_BANDS].reverse().find(b => clampedVal >= b.from) ?? AQI_BANDS[0];
+  // needle: draw a line from center to just inside the arc outer edge
+  const needleAngle = Math.PI * (1 - clampedVal / maxAQI);
+  const needleTip = toXY(clampedVal, r - sw / 2 + 2);
+  // scale label positions (outside the arc ends)
+  const leftLabel  = toXY(0,   r + sw / 2 + 14);
+  const rightLabel = toXY(maxAQI, r + sw / 2 + 14);
+
+  return (
+    <div style={{ width: "100%", position: "relative" }}>
+      <svg viewBox="0 0 300 256" style={{ width: "100%", display: "block" }}>
+        <defs>
+          <linearGradient id="aqi-fade" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="var(--surface)" stopOpacity="0" />
+            <stop offset="55%"  stopColor="var(--surface)" stopOpacity="0.82" />
+            <stop offset="100%" stopColor="var(--surface)" stopOpacity="1" />
+          </linearGradient>
+        </defs>
+
+        {/* Track ring */}
+        <path d={segPath(0, maxAQI, 0)} fill="none" stroke="var(--track-strong)" strokeWidth={sw} strokeLinecap="round" />
+
+        {/* Coloured band segments */}
+        {AQI_BANDS.map(b => (
+          <path key={b.label} d={segPath(b.from, b.to)} fill="none" stroke={b.color} strokeWidth={sw} strokeLinecap="round" opacity={0.88} />
+        ))}
+
+        {/* Scale labels */}
+        <text x={leftLabel.x}  y={leftLabel.y  + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-3)" }}>0</text>
+        <text x={rightLabel.x} y={rightLabel.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-3)" }}>500</text>
+
+        {/* Needle */}
+        <line
+          x1={cx} y1={cy}
+          x2={needleTip.x} y2={needleTip.y}
+          stroke={currentBand.color} strokeWidth="3.5" strokeLinecap="round"
+        />
+        {/* Pivot hub */}
+        <circle cx={cx} cy={cy} r={10} fill={currentBand.color} />
+        <circle cx={cx} cy={cy} r={5}  fill="var(--surface)" />
+
+        {/* Gradient fade behind the text block */}
+        <rect x={0} y={cy - 10} width={300} height={115} fill="url(#aqi-fade)" />
+
+        {/* AQI numeric value */}
+        <text x={cx} y={cy + 60} textAnchor="middle" fontSize="62" fontWeight="900" fontFamily="inherit" style={{ fill: currentBand.color }}>{value}</text>
+
+        {/* Category & unit labels */}
+        <text x={cx} y={cy + 86} textAnchor="middle" fontSize="13" fontWeight="700" letterSpacing="3" fontFamily="inherit" style={{ fill: "var(--text-2)" }}>{currentBand.label.toUpperCase()}</text>
+        <text x={cx} y={cy + 103} textAnchor="middle" fontSize="10" fontWeight="600" letterSpacing="4" fontFamily="inherit" style={{ fill: "var(--text-3)" }}>AQI INDEX</text>
+      </svg>
+    </div>
+  );
+}
+
 function ToggleChip({
   label,
   enabled,
@@ -245,8 +326,8 @@ function IntensitySlider({
         max={255}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        onMouseUp={onCommit}
-        onTouchEnd={onCommit}
+        onMouseUp={() => setTimeout(onCommit, 250)}
+        onTouchEnd={() => setTimeout(onCommit, 250)}
         style={{ width: "100%", accentColor: "#22c55e" }}
       />
     </div>
@@ -587,7 +668,7 @@ function DashboardPageContent() {
               className="card flex flex-col dash-hero"
               style={{
                 padding: 32, gridRow: "1 / 3",
-                background: "linear-gradient(160deg, rgba(34,197,94,0.06) 0%, var(--surface) 40%, rgba(34,197,94,0.03) 100%)",
+                background: "var(--surface)",
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 ['--card-tint' as any]: 'rgba(34,197,94,0.12)',
               }}
@@ -598,11 +679,14 @@ function DashboardPageContent() {
                   <div className="rounded-2xl flex items-center justify-center" style={{ width: 48, height: 48, background: "rgba(34,197,94,0.1)" }}>
                     <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.43A2 2 0 0 1 14 9.53V2"/><path d="M8.5 2h7"/></svg>
                   </div>
-                  <span className="font-bold" style={{ fontSize: 18 }}>Bio-Reactor Core</span>
+                  <div>
+                    <span className="font-bold" style={{ fontSize: 18 }}>Bio-Reactor Core</span>
+                    <p style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2, fontWeight: 500 }}>{d.activeTreeId}</p>
+                  </div>
                 </div>
                 <Badge label="Optimal" />
               </div>
-              <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative", overflow: "hidden" }}>
+              <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative" }}>
                 <div
                   className="absolute"
                   style={{
@@ -616,7 +700,7 @@ function DashboardPageContent() {
                   }}
                 >
                   <Image
-                    src="/Ai Main_00.png"
+                    src="/Algaetree.png"
                     alt="AlgaeTree"
                     fill
                     className="object-contain"
@@ -658,14 +742,7 @@ function DashboardPageContent() {
               <motion.button onClick={() => { setNavigating(true); router.push(`/talk?tree=${d.activeTreeId}`); }} disabled={navigating} className="glow-btn flex items-center justify-center cursor-pointer dash-desktop-cta" style={{ gap: 10, marginTop: 20, padding: "16px 0", borderRadius: 16, background: navigating ? "linear-gradient(135deg, #15803d, #16a34a)" : "linear-gradient(135deg, #16a34a, #22c55e)", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", boxShadow: "0 8px 30px rgba(34,197,94,0.3)", opacity: navigating ? 0.85 : 1 }} whileHover={navigating ? {} : { scale: 1.02 }} whileTap={navigating ? {} : { scale: 0.97 }}>
                 {navigating ? (<><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" strokeWidth="3" /><path d="M12 2a10 10 0 0 1 10 10" stroke="#fff" strokeWidth="3" strokeLinecap="round" /></svg><span>Loading…</span></>) : (<><svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg><span>Talk to the Tree</span><span className="pulse-dot rounded-full" style={{ width: 8, height: 8, background: "#fff" }} /></>)}
               </motion.button>
-              <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
-                {[{ l: "DEVICE", v: d.activeTreeId }, { l: "BATTERY", v: `${d.batteryPercentage}%` }, { l: "LAST CHECK", v: d.lastCheck }].map(s => (
-                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "var(--mini-bg)" }}>
-                    <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
-                    <p className="font-bold" style={{ fontSize: 13, marginTop: 4, lineHeight: 1.2, overflowWrap: "anywhere" }}>{s.v}</p>
-                  </div>
-                ))}
-              </div>
+
             </motion.div>
 
             <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.43A2 2 0 0 1 14 9.53V2"/><path d="M8.5 2h7"/></svg>} label="pH Level" value={d.ph} unit="pH" min={0} max={14} color="#4ade80" delay={0.2} tint="rgba(34,197,94,0.04)" />
@@ -678,7 +755,7 @@ function DashboardPageContent() {
             </div>
 
             {/* Biomass + Growth */}
-            <motion.div className="card flex flex-col dash-mobile-biomass" style={{ padding: 28, background: "linear-gradient(150deg, rgba(34,197,94,0.05) 0%, var(--surface) 50%, rgba(34,197,94,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(34,197,94,0.12)' } as React.CSSProperties} variants={rise}>
+            <motion.div className="card flex flex-col dash-mobile-biomass" style={{ padding: 28, background: "var(--surface)", ['--card-tint' as React.CSSProperties & string]: 'rgba(34,197,94,0.12)' } as React.CSSProperties} variants={rise}>
               <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
                 <div className="flex items-center" style={{ gap: 8 }}>
                   <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></svg>
@@ -722,7 +799,7 @@ function DashboardPageContent() {
               className="card flex flex-col dash-hero"
               style={{
                 padding: 32, gridRow: "1 / 3",
-                background: "linear-gradient(160deg, rgba(56,189,248,0.06) 0%, var(--surface) 40%, rgba(56,189,248,0.03) 100%)",
+                background: "var(--surface)",
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 ['--card-tint' as any]: 'rgba(56,189,248,0.12)',
               }}
@@ -737,58 +814,8 @@ function DashboardPageContent() {
                 </div>
                 <Badge label="Normal" />
               </div>
-              <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative", overflow: "hidden" }}>
-                <div
-                  className="absolute"
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    opacity: 0.96,
-                    zIndex: 0,
-                    maskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 68%, rgba(0,0,0,0.25) 86%, rgba(0,0,0,0) 100%)",
-                    WebkitMaskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 68%, rgba(0,0,0,0.25) 86%, rgba(0,0,0,0) 100%)",
-                    pointerEvents: "none",
-                  }}
-                >
-                  <Image
-                    src="/env-card-klev.png"
-                    alt="Environment module"
-                    fill
-                    className="object-contain"
-                    style={{
-                      filter: "drop-shadow(0 24px 48px rgba(56,189,248,0.18))",
-                      objectPosition: "center 42%",
-                    }}
-                    priority
-                  />
-                </div>
-                <div
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: 168,
-                    background: "linear-gradient(to top, var(--surface) 0%, transparent 100%)",
-                    borderBottomLeftRadius: 24,
-                    borderBottomRightRadius: 24,
-                    zIndex: 1,
-                    pointerEvents: "none",
-                  }}
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    left: "50%",
-                    bottom: 12,
-                    transform: "translateX(-50%)",
-                    zIndex: 2,
-                    textAlign: "center",
-                  }}
-                >
-                  <motion.p className="font-black text-sky-400 leading-none" style={{ fontSize: "4.5rem", filter: "drop-shadow(0 0 40px rgba(56,189,248,0.3))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.airQuality}</motion.p>
-                  <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>AQI (Index)</p>
-                </div>
+              <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative", paddingTop: 8 }}>
+                <AQIGauge value={+d.airQuality} />
               </div>
               {/* Env mini stats */}
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
@@ -806,7 +833,7 @@ function DashboardPageContent() {
             <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>} label="Upper Turbidity" value={+d.uTurbidity} unit="NTU" min={0} max={3000} color="#fbbf24" delay={0.4} tint="rgba(251,191,36,0.04)" />
 
             {/* CO₂ & Atmospheric card */}
-            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(56,189,248,0.05) 0%, var(--surface) 50%, rgba(56,189,248,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(56,189,248,0.12)' } as React.CSSProperties} variants={rise}>
+            <motion.div className="card flex flex-col" style={{ padding: 28, background: "var(--surface)", ['--card-tint' as React.CSSProperties & string]: 'rgba(56,189,248,0.12)' } as React.CSSProperties} variants={rise}>
               <div className="flex items-center" style={{ gap: 8, marginBottom: 12 }}>
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>
                 <span className="font-semibold" style={{ fontSize: 15, color: "var(--text-2)" }}>Atmospheric CO₂</span>
@@ -842,7 +869,7 @@ function DashboardPageContent() {
               className="card flex flex-col dash-hero"
               style={{
                 padding: 32, gridRow: "1 / 3",
-                background: "linear-gradient(160deg, rgba(168,85,247,0.06) 0%, var(--surface) 40%, rgba(168,85,247,0.03) 100%)",
+                background: "var(--surface)",
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 ['--card-tint' as any]: 'rgba(168,85,247,0.12)',
               }}
@@ -926,7 +953,7 @@ function DashboardPageContent() {
             <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67 0C8.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>} label="Energy Usage" value={d.energyUsage} unit="W" min={0} max={300} color="#fbbf24" delay={0.4} tint="rgba(251,191,36,0.04)" />
 
             {/* Weekly Biomass Output chart */}
-            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(168,85,247,0.05) 0%, var(--surface) 50%, rgba(168,85,247,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(168,85,247,0.12)' } as React.CSSProperties} variants={rise}>
+            <motion.div className="card flex flex-col" style={{ padding: 28, background: "var(--surface)", ['--card-tint' as React.CSSProperties & string]: 'rgba(168,85,247,0.12)' } as React.CSSProperties} variants={rise}>
               <div className="flex items-center" style={{ gap: 8, marginBottom: 12 }}>
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
                 <span className="font-semibold" style={{ fontSize: 15, color: "var(--text-2)" }}>Weekly Biomass Output</span>
@@ -961,7 +988,7 @@ function DashboardPageContent() {
               className="card flex flex-col dash-hero"
               style={{
                 padding: 32, gridRow: "1 / 3",
-                background: "linear-gradient(160deg, rgba(251,191,36,0.06) 0%, var(--surface) 40%, rgba(251,191,36,0.03) 100%)",
+                background: "var(--surface)",
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 ['--card-tint' as any]: 'rgba(251,191,36,0.12)',
               }}
@@ -1051,7 +1078,7 @@ function DashboardPageContent() {
                 gridRow: "1 / 3",
                 minHeight: 0,
                 position: "relative",
-                background: "linear-gradient(145deg, rgba(14,165,233,0.06), var(--surface), rgba(34,197,94,0.05))",
+                background: "var(--surface)",
                 ['--card-tint' as React.CSSProperties & string]: 'rgba(56,189,248,0.12)',
               } as React.CSSProperties}
               variants={rise}
@@ -1106,8 +1133,8 @@ function DashboardPageContent() {
               <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
 
               <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
-                <ToggleChip label="Air Bubbles" enabled={uiOperations.AirBubbles} busy={controlBusy} onToggle={() => { void toggleOperation("AirBubbles"); }} />
-                <ToggleChip label="Fan" enabled={uiOperations.Fan} busy={controlBusy} onToggle={() => { void toggleOperation("Fan"); }} />
+                <ToggleChip label="Oxygen Infusion" enabled={uiOperations.AirBubbles} busy={controlBusy} onToggle={() => { void toggleOperation("AirBubbles"); }} />
+                <ToggleChip label="Air Purification" enabled={uiOperations.Fan} busy={controlBusy} onToggle={() => { void toggleOperation("Fan"); }} />
                 <ToggleChip label="Drain" enabled={uiOperations.Drain} busy={controlBusy} onToggle={() => { void toggleOperation("Drain"); }} />
                 <ToggleChip label="Filling" enabled={uiOperations.Filling} busy={controlBusy} onToggle={() => { void toggleOperation("Filling"); }} />
                 <ToggleChip label="Solar Cleaning" enabled={uiOperations.SolarCleaning} busy={controlBusy} onToggle={() => { void toggleOperation("SolarCleaning"); }} />
@@ -1196,7 +1223,7 @@ function DashboardPageContent() {
           className="card flex items-center justify-between dash-footer"
           style={{
             padding: "22px 36px", gridColumn: "1 / -1",
-            background: "linear-gradient(135deg, rgba(34,197,94,0.03), var(--surface), rgba(56,189,248,0.03))",
+            background: "var(--surface)",
           }}
           variants={rise}
         >

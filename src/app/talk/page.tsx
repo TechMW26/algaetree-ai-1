@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
@@ -127,9 +127,11 @@ function SoundWave({ active }: { active: boolean }) {
 
 export default function TalkPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [conversationStarted, setConversationStarted] = useState(false);
   const [agentState, setAgentState] = useState<"off" | "starting" | "on">("off");
-  const d = useLiveData();
+  const selectedTreeId = searchParams.get("tree") ?? "AT00A0001";
+  const d = useLiveData(selectedTreeId);
   const liveDataRef = useRef(d);
   liveDataRef.current = d;
 
@@ -141,7 +143,7 @@ export default function TalkPage() {
   const getLivePrompt = useCallback(() => {
     const ld = liveDataRef.current;
     const gestureCtx = buildGestureContext(gestureHistoryRef.current);
-    return ANGELLA_SYSTEM_PROMPT + `\n\nCURRENT LIVE READINGS FROM THE ALGAETREE SYSTEM:\n- pH Level: ${ld.ph}\n- Temperature: ${ld.temp}°C\n- Dissolved Oxygen (DO2): ${ld.do2} mg/L\n- Biomass Density: ${ld.biomass} g/L (growth rate: +${ld.growth}%/hr)\n- System Efficiency: ${ld.efficiency}%\n- Culture Volume: ${ld.volume} litres\n- Current Cycle Day: ${ld.cycle}\n- Days Until Maintenance: ${ld.maint}\n- CO2 Captured Today: ${ld.co2}g\n- O2 Released Today: ${ld.o2}g\n- Air Purified Today: ${ld.air} litres\n- System Uptime: ${ld.uptime}\n\nWhen a user asks about current readings, stats, or how the system is performing, use these live values in your answer.` + gestureCtx;
+    return ANGELLA_SYSTEM_PROMPT + `\n\nCURRENT LIVE READINGS FROM THE ALGAETREE SYSTEM:\n- Device ID: ${ld.activeTreeId}\n- Location: ${ld.location}\n- AQI: ${ld.aqi} index\n- CO2: ${ld.co2Ambient} ppm\n- eCO2: ${ld.eco2} ppm\n- TVOC: ${ld.tvoc} ppb\n- pH: ${ld.ph} pH\n- TDS: ${ld.tds} ppm\n- Temperature: ${ld.temp} °C\n- Lower Turbidity: ${ld.lTurbidity} NTU\n- Upper Turbidity: ${ld.uTurbidity} NTU\n- Battery: ${ld.batteryPercentage}% (${ld.batteryCharging ? "Charging" : "Not Charging"})\n- Last Sensor Check: ${ld.lastCheck}\n- Last Online: ${ld.lastOnline}\n\nWhen a user asks about current readings, stats, or how the system is performing, use these live values in your answer.` + gestureCtx;
   }, []);
 
   // Build first message based on detected gestures at conversation start
@@ -398,10 +400,10 @@ export default function TalkPage() {
           transition={{ delay: 0.3, duration: 0.5 }}
         >
           {[
-            { icon: "🔬", label: "Bio-Reactor", value: "Active", sub: "Photosynthetic microalgae cultivation" },
-            { icon: "🫧", label: "CO₂ Captured", value: `${d.co2}g`, sub: "Today's carbon sequestration" },
-            { icon: "🌬️", label: "O₂ Released", value: `${d.o2}g`, sub: "Oxygen produced today" },
-            { icon: "🧬", label: "Biomass Density", value: `${d.biomass} g/L`, sub: `Growing at +${d.growth}%/hr` },
+            { icon: "🧪", label: "Device ID", value: d.activeTreeId, sub: d.location },
+            { icon: "🫧", label: "CO2", value: `${d.co2Ambient} ppm`, sub: "Realtime CO2 sensor reading" },
+            { icon: "🌫️", label: "eCO2", value: `${d.eco2} ppm`, sub: "Estimated equivalent CO2" },
+            { icon: "🧬", label: "TVOC", value: `${d.tvoc} ppb`, sub: "Total volatile organic compounds" },
           ].map((item, i) => (
             <motion.div
               key={item.label}
@@ -430,10 +432,10 @@ export default function TalkPage() {
           transition={{ delay: 0.3, duration: 0.5 }}
         >
           {[
-            { icon: "🧪", label: "pH Level", value: `${d.ph}`, sub: "Optimal range 6.8 – 7.2" },
-            { icon: "🌡️", label: "Temperature", value: `${d.temp}°C`, sub: "Maintained at 25 – 30°C" },
-            { icon: "💧", label: "Dissolved O₂", value: `${d.do2} mg/L`, sub: "Healthy dissolved oxygen" },
-            { icon: "⚡", label: "Efficiency", value: `${d.efficiency}%`, sub: "System operating at peak" },
+            { icon: "🧪", label: "pH", value: `${d.ph} pH`, sub: "SensorData.PH" },
+            { icon: "🌡️", label: "Temperature", value: `${d.temp}°C`, sub: "SensorData.Temprature" },
+            { icon: "💧", label: "TDS", value: `${d.tds} ppm`, sub: "Total dissolved solids" },
+            { icon: "📶", label: "AQI", value: `${d.aqi} index`, sub: `Battery ${d.batteryPercentage}% • Last check ${d.lastCheck}` },
           ].map((item, i) => (
             <motion.div
               key={item.label}

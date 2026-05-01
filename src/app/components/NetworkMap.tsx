@@ -17,31 +17,26 @@ type Pod = {
 };
 
 const PODS: Pod[] = [
-  { id: 1, lat: 28.6139, lng: 77.2090, location: "New Delhi", efficiency: "98%", aqi: 158, health: "Optimal", maintenance: "14d" },
-  { id: 2, lat: 19.0760, lng: 72.8777, location: "Mumbai", efficiency: "94%", aqi: 112, health: "Good", maintenance: "21d" },
-  { id: 3, lat: 12.9716, lng: 77.5946, location: "Bangalore", efficiency: "99%", aqi: 45, health: "Excellent", maintenance: "28d" },
-  { id: 4, lat: 22.5726, lng: 88.3639, location: "Kolkata", efficiency: "92%", aqi: 145, health: "Warning", maintenance: "3d" },
-  { id: 5, lat: 13.0827, lng: 80.2707, location: "Chennai", efficiency: "96%", aqi: 65, health: "Good", maintenance: "18d" },
-  { id: 6, lat: 26.9124, lng: 75.7873, location: "Jaipur", efficiency: "97%", aqi: 98, health: "Optimal", maintenance: "10d" },
-  { id: 7, lat: 23.2576751, lng: 77.4251403, location: "Bhopal", efficiency: "96%", aqi: 88, health: "Optimal", maintenance: "12d" },
-  { id: 8, lat: 17.3850, lng: 78.4867, location: "Hyderabad", efficiency: "95%", aqi: 82, health: "Good", maintenance: "16d" },
-  { id: 9, lat: 18.5204, lng: 73.8567, location: "Pune", efficiency: "97%", aqi: 76, health: "Optimal", maintenance: "19d" },
-  { id: 10, lat: 23.0225, lng: 72.5714, location: "Ahmedabad", efficiency: "93%", aqi: 124, health: "Warning", maintenance: "6d" },
-  { id: 11, lat: 26.8467, lng: 80.9462, location: "Lucknow", efficiency: "94%", aqi: 168, health: "Warning", maintenance: "4d" },
-  { id: 12, lat: 21.1458, lng: 79.0882, location: "Nagpur", efficiency: "96%", aqi: 92, health: "Good", maintenance: "15d" },
-  { id: 13, lat: 25.5941, lng: 85.1376, location: "Patna", efficiency: "91%", aqi: 175, health: "Warning", maintenance: "2d" },
-  { id: 14, lat: 30.7333, lng: 76.7794, location: "Chandigarh", efficiency: "98%", aqi: 102, health: "Optimal", maintenance: "22d" },
-  { id: 15, lat: 8.5241, lng: 76.9366, location: "Thiruvananthapuram", efficiency: "99%", aqi: 38, health: "Excellent", maintenance: "30d" },
-  { id: 16, lat: 26.1445, lng: 91.7362, location: "Guwahati", efficiency: "95%", aqi: 71, health: "Good", maintenance: "17d" },
-  { id: 17, lat: 20.2961, lng: 85.8245, location: "Bhubaneswar", efficiency: "97%", aqi: 68, health: "Optimal", maintenance: "20d" },
-  { id: 18, lat: 31.1048, lng: 77.1734, location: "Shimla", efficiency: "99%", aqi: 32, health: "Excellent", maintenance: "26d" },
-  { id: 19, lat: 15.2993, lng: 74.1240, location: "Goa", efficiency: "98%", aqi: 48, health: "Excellent", maintenance: "24d" },
-  { id: 20, lat: 34.0837, lng: 74.7973, location: "Srinagar", efficiency: "97%", aqi: 55, health: "Optimal", maintenance: "23d" },
-  // Dubai (UAE)
-  { id: 21, lat: 25.2048, lng: 55.2708, location: "Dubai — Downtown", efficiency: "98%", aqi: 84, health: "Optimal", maintenance: "19d" },
-  { id: 22, lat: 25.1124, lng: 55.1390, location: "Dubai — Marina", efficiency: "97%", aqi: 78, health: "Optimal", maintenance: "21d" },
-  { id: 23, lat: 25.2697, lng: 55.3094, location: "Dubai — Deira", efficiency: "95%", aqi: 96, health: "Good", maintenance: "14d" },
-  { id: 24, lat: 25.0657, lng: 55.1713, location: "Dubai — Jebel Ali", efficiency: "94%", aqi: 108, health: "Good", maintenance: "11d" },
+  {
+    id: 1,
+    lat: 23.258690000000000,
+    lng: 77.430980000000000,
+    location: "Bhopal",
+    efficiency: "98%",
+    aqi: 88,
+    health: "Optimal",
+    maintenance: "12d",
+  },
+  {
+    id: 2,
+    lat: 23.258690000000000,
+    lng: 77.431160000000000,
+    location: "Bhopal",
+    efficiency: "97%",
+    aqi: 90,
+    health: "Optimal",
+    maintenance: "14d",
+  },
 ];
 
 // High-detail India boundary (datameet/maps) — follows official India border (incl. J&K, Ladakh).
@@ -240,7 +235,7 @@ export default function NetworkMap() {
       className: "custom-marker-container",
       html: `
         <div class="marker-pulse"></div>
-        <img src="/Algaetree.png" class="custom-marker-icon" style="width:40px;height:40px;object-fit:contain;" alt="" />
+        <img src="/Ai Main_00.png" class="custom-marker-icon" style="width:40px;height:40px;object-fit:contain;" alt="" />
       `,
       iconSize: [40, 40],
       iconAnchor: [20, 20],
@@ -256,7 +251,7 @@ export default function NetworkMap() {
           <div class="pod-header">
             <div class="pod-title-wrap">
               <span class="pod-title">${pod.location}</span>
-              <span class="pod-subtitle">AlgaePod #${pod.id}</span>
+              <span class="pod-subtitle">${pod.id === 1 ? "AT001" : "AT002"} • Live Tree</span>
             </div>
             <span class="pod-status" title="Online"></span>
           </div>

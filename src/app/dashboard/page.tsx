@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { useLiveData } from "../hooks/useLiveData";
@@ -22,6 +22,10 @@ function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint 
   color: string; icon: ReactNode; delay?: number; tint: string;
 }) {
   const pct = Math.min(Math.max((value - min) / (max - min), 0), 1);
+  const valueText = String(value);
+  const valueChars = valueText.length;
+  const valueFontSize = Math.max(22, 58 - Math.max(0, valueChars - 4) * 6);
+  const valueTextLength = valueChars >= 9 ? 144 : valueChars >= 8 ? 152 : valueChars >= 7 ? 160 : undefined;
   const r = 90;
   const circumHalf = Math.PI * r;
   const dashLen = pct * circumHalf;
@@ -39,7 +43,6 @@ function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint 
         ['--card-tint' as any]: `${color}18`,
       }}
       variants={rise}
-      whileHover={{ scale: 1.02, transition: { duration: 0.25 } }}
     >
       <div style={{ position: "relative", width: "88%", aspectRatio: "280 / 155" }}>
         <svg width="100%" height="100%" viewBox="-30 -15 280 155" preserveAspectRatio="xMidYMid meet" style={{ overflow: "visible" }}>
@@ -64,7 +67,19 @@ function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint 
             transition={{ duration: 1.6, delay, ease: [0.25, 0.46, 0.45, 0.94] }}
           />
           {/* Center value as SVG text for proper scaling */}
-          <text x="110" y="112" textAnchor="middle" style={{ fill: "var(--text-2)" }} fontWeight="400" fontSize="52" fontFamily="inherit">{value}</text>
+          <text
+            x="110"
+            y="112"
+            textAnchor="middle"
+            style={{ fill: "var(--text-2)" }}
+            fontWeight="400"
+            fontSize={valueFontSize}
+            fontFamily="inherit"
+            lengthAdjust="spacingAndGlyphs"
+            textLength={valueTextLength}
+          >
+            {valueText}
+          </text>
           <text x="110" y="138" textAnchor="middle" style={{ fill: "var(--text-3)" }} fontWeight="600" fontSize="16" fontFamily="inherit">{unit}</text>
         </svg>
       </div>
@@ -146,13 +161,201 @@ function AnimBar({ pct, color, delay = 0 }: { pct: number; color: string; delay?
   );
 }
 
+function ToggleChip({
+  label,
+  enabled,
+  busy,
+  onToggle,
+}: {
+  label: string;
+  enabled: boolean;
+  busy?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={busy}
+      className="cursor-pointer"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        width: "100%",
+        border: `1px solid ${enabled ? "rgba(34,197,94,0.5)" : "var(--border)"}`,
+        background: enabled
+          ? "linear-gradient(140deg, rgba(34,197,94,0.14), rgba(34,197,94,0.04))"
+          : "linear-gradient(140deg, var(--surface), var(--mini-bg))",
+        borderRadius: 14,
+        padding: "11px 12px",
+        opacity: busy ? 0.7 : 1,
+        boxShadow: enabled ? "0 6px 20px rgba(34,197,94,0.12)" : "none",
+        transition: "all .2s ease",
+      }}
+    >
+      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)" }}>{label}</span>
+      <span
+        style={{
+          width: 34,
+          height: 20,
+          borderRadius: 999,
+          background: enabled ? "linear-gradient(135deg, #16a34a, #22c55e)" : "var(--track)",
+          position: "relative",
+          transition: "all .2s ease",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            top: 2,
+            left: enabled ? 18 : 2,
+            width: 16,
+            height: 16,
+            borderRadius: "50%",
+            background: "#fff",
+            transition: "all .2s ease",
+          }}
+        />
+      </span>
+    </button>
+  );
+}
+
+function IntensitySlider({
+  label,
+  value,
+  onChange,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  onCommit: () => void;
+}) {
+  return (
+    <div className="rounded-xl" style={{ padding: "10px 12px", background: "linear-gradient(145deg, var(--mini-bg), var(--surface))", border: "1px solid var(--border)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.2)" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-2)" }}>{label}</span>
+        <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>{value}</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={255}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        onMouseUp={onCommit}
+        onTouchEnd={onCommit}
+        style={{ width: "100%", accentColor: "#22c55e" }}
+      />
+    </div>
+  );
+}
+
 export default function DashboardPage() {
-  const d = useLiveData();
+  const searchParams = useSearchParams();
+  const selectedPod = searchParams.get("pod");
+  const selectedTreeId = selectedPod === "2" ? "AT00A0002" : "AT00A0001";
+  const d = useLiveData(selectedTreeId);
   const router = useRouter();
   const [time, setTime] = useState("");
   const [navigating, setNavigating] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const controlBusy = pendingSyncCount > 0;
+  const [uiOperations, setUiOperations] = useState(d.operations);
+  const [uiAirBubblesTiming, setUiAirBubblesTiming] = useState(d.airBubblesTiming);
+  const [ledDraft, setLedDraft] = useState({ LED1: 0, LED2: 0, LED3: 0, LED4: 0 });
+  const [nutritionDraft, setNutritionDraft] = useState({
+    Motor1Volume: 0,
+    Motor2Volume: 0,
+    Motor3Volume: 0,
+    Motor4Volume: 0,
+    Motor5Volume: 0,
+  });
+
+  useEffect(() => {
+    setLedDraft(d.ledIntensity);
+  }, [d.ledIntensity.LED1, d.ledIntensity.LED2, d.ledIntensity.LED3, d.ledIntensity.LED4]);
+
+  useEffect(() => {
+    setUiOperations(d.operations);
+  }, [
+    d.operations.AirBubbles,
+    d.operations.Drain,
+    d.operations.Fan,
+    d.operations.Filling,
+    d.operations.SolarCleaning,
+    d.operations.LED1,
+    d.operations.LED2,
+    d.operations.LED3,
+    d.operations.LED4,
+  ]);
+
+  useEffect(() => {
+    setUiAirBubblesTiming(d.airBubblesTiming);
+  }, [d.airBubblesTiming.on, d.airBubblesTiming.off]);
+
+  useEffect(() => {
+    setNutritionDraft(d.nutritionDosing);
+  }, [
+    d.nutritionDosing.Motor1Volume,
+    d.nutritionDosing.Motor2Volume,
+    d.nutritionDosing.Motor3Volume,
+    d.nutritionDosing.Motor4Volume,
+    d.nutritionDosing.Motor5Volume,
+  ]);
+
+  const patchDevice = async (updates: Record<string, unknown>) => {
+    setPendingSyncCount((c) => c + 1);
+    try {
+      await fetch("/api/device-control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ treeId: d.activeTreeId, updates }),
+      });
+    } finally {
+      setPendingSyncCount((c) => Math.max(0, c - 1));
+    }
+  };
+
+  const toggleOperation = async (key: keyof typeof d.operations) => {
+    const nextOps = {
+      ...uiOperations,
+      [key]: !uiOperations[key],
+    };
+    setUiOperations(nextOps);
+    await patchDevice({
+      Operations: nextOps,
+    });
+  };
+
+  const commitIntensity = async () => {
+    await patchDevice({ Intensity: ledDraft });
+  };
+
+  const commitNutrition = async () => {
+    await patchDevice({ NutritionDosing: nutritionDraft });
+  };
+
+  const setBubblesTiming = async (key: "on" | "off", value: number) => {
+    const next = {
+      on: key === "on" ? value : uiAirBubblesTiming.on,
+      off: key === "off" ? value : uiAirBubblesTiming.off,
+    };
+    setUiAirBubblesTiming(next);
+    await patchDevice({
+      Operations: {
+        ...uiOperations,
+        AirBubblesTiming: {
+          On: next.on,
+          Off: next.off,
+        },
+      },
+    });
+  };
 
   const tabLabels = ["Bio-Reactor", "Environment", "Performance", "System"] as const;
   const tabIcons = [
@@ -347,7 +550,7 @@ export default function DashboardPage() {
         variants={stagger}
         initial="hidden"
         animate="show"
-        key={activeTab}
+        key={`${activeTab}-${d.activeTreeId}`}
       >
 
         {/* ═══════════ TAB 0 — BIO-REACTOR ═══════════ */}
@@ -363,7 +566,6 @@ export default function DashboardPage() {
                 ['--card-tint' as any]: 'rgba(34,197,94,0.12)',
               }}
               variants={rise}
-              whileHover={{ scale: 1.01, transition: { duration: 0.3 } }}
             >
               <div className="flex items-center justify-between" style={{ marginBottom: 24 }}>
                 <div className="flex items-center" style={{ gap: 12 }}>
@@ -374,28 +576,74 @@ export default function DashboardPage() {
                 </div>
                 <Badge label="Optimal" />
               </div>
-              <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ gap: 8 }}>
-                <div className="relative float-anim" style={{ width: 220, height: 260 }}>
-                  <Image src="https://iot.algaetree.in/Algaetree.png" alt="AlgaeTree" fill className="object-contain" style={{ filter: "drop-shadow(0 24px 48px rgba(34,197,94,0.15))" }} priority />
+              <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative", overflow: "hidden" }}>
+                <div
+                  className="absolute"
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    opacity: 1,
+                    zIndex: 0,
+                    maskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 68%, rgba(0,0,0,0.25) 86%, rgba(0,0,0,0) 100%)",
+                    WebkitMaskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 68%, rgba(0,0,0,0.25) 86%, rgba(0,0,0,0) 100%)",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <Image
+                    src="/Ai Main_00.png"
+                    alt="AlgaeTree"
+                    fill
+                    className="object-contain"
+                    style={{
+                      filter: "drop-shadow(0 24px 48px rgba(34,197,94,0.2))",
+                      objectPosition: "center 42%",
+                    }}
+                    priority
+                  />
                 </div>
-                <motion.p className="font-black text-green-400 leading-none" style={{ fontSize: "4.5rem", filter: "drop-shadow(0 0 40px rgba(34,197,94,0.3))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.efficiency}%</motion.p>
-                <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)" }}>Efficiency</p>
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 168,
+                    background: "linear-gradient(to top, var(--surface) 0%, transparent 100%)",
+                    borderBottomLeftRadius: 24,
+                    borderBottomRightRadius: 24,
+                    zIndex: 1,
+                    pointerEvents: "none",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    left: "50%",
+                    bottom: 12,
+                    transform: "translateX(-50%)",
+                    zIndex: 2,
+                    textAlign: "center",
+                  }}
+                >
+                  <motion.p className="font-black text-green-400 leading-none" style={{ fontSize: "4.5rem", filter: "drop-shadow(0 0 40px rgba(34,197,94,0.3))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.co2Ambient}</motion.p>
+                  <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>CO2 (ppm)</p>
+                </div>
               </div>
-              <motion.button onClick={() => { setNavigating(true); router.push("/talk"); }} disabled={navigating} className="glow-btn flex items-center justify-center cursor-pointer dash-desktop-cta" style={{ gap: 10, marginTop: 20, padding: "16px 0", borderRadius: 16, background: navigating ? "linear-gradient(135deg, #15803d, #16a34a)" : "linear-gradient(135deg, #16a34a, #22c55e)", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", boxShadow: "0 8px 30px rgba(34,197,94,0.3)", opacity: navigating ? 0.85 : 1 }} whileHover={navigating ? {} : { scale: 1.02 }} whileTap={navigating ? {} : { scale: 0.97 }}>
+              <motion.button onClick={() => { setNavigating(true); router.push(`/talk?tree=${d.activeTreeId}`); }} disabled={navigating} className="glow-btn flex items-center justify-center cursor-pointer dash-desktop-cta" style={{ gap: 10, marginTop: 20, padding: "16px 0", borderRadius: 16, background: navigating ? "linear-gradient(135deg, #15803d, #16a34a)" : "linear-gradient(135deg, #16a34a, #22c55e)", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", boxShadow: "0 8px 30px rgba(34,197,94,0.3)", opacity: navigating ? 0.85 : 1 }} whileHover={navigating ? {} : { scale: 1.02 }} whileTap={navigating ? {} : { scale: 0.97 }}>
                 {navigating ? (<><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" strokeWidth="3" /><path d="M12 2a10 10 0 0 1 10 10" stroke="#fff" strokeWidth="3" strokeLinecap="round" /></svg><span>Loading…</span></>) : (<><svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg><span>Talk to the Tree</span><span className="pulse-dot rounded-full" style={{ width: 8, height: 8, background: "#fff" }} /></>)}
               </motion.button>
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
-                {[{ l: "VOLUME", v: `${d.volume}L` }, { l: "CYCLE", v: `${d.cycle}d` }, { l: "MAINT.", v: `${d.maint}d` }].map(s => (
+                {[{ l: "DEVICE", v: d.activeTreeId }, { l: "BATTERY", v: `${d.batteryPercentage}%` }, { l: "LAST CHECK", v: d.lastCheck }].map(s => (
                   <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "var(--mini-bg)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
-                    <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
+                    <p className="font-bold" style={{ fontSize: 13, marginTop: 4, lineHeight: 1.2, overflowWrap: "anywhere" }}>{s.v}</p>
                   </div>
                 ))}
               </div>
             </motion.div>
 
             <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.43A2 2 0 0 1 14 9.53V2"/><path d="M8.5 2h7"/></svg>} label="pH Level" value={d.ph} unit="pH" min={0} max={14} color="#4ade80" delay={0.2} tint="rgba(34,197,94,0.04)" />
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>} label="Dissolved O₂" value={d.do2} unit="mg/L" min={0} max={14} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>} label="TDS" value={d.tds} unit="ppm" min={0} max={1200} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
             <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>} label="Temperature" value={d.temp} unit="°C" min={0} max={50} color="#f97316" delay={0.4} tint="rgba(249,115,22,0.04)" />
 
             {/* Efficiency gauge (mobile only) */}
@@ -404,7 +652,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Biomass + Growth */}
-            <motion.div className="card flex flex-col dash-mobile-biomass" style={{ padding: 28, background: "linear-gradient(150deg, rgba(34,197,94,0.05) 0%, var(--surface) 50%, rgba(34,197,94,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(34,197,94,0.12)' } as React.CSSProperties} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
+            <motion.div className="card flex flex-col dash-mobile-biomass" style={{ padding: 28, background: "linear-gradient(150deg, rgba(34,197,94,0.05) 0%, var(--surface) 50%, rgba(34,197,94,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(34,197,94,0.12)' } as React.CSSProperties} variants={rise}>
               <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
                 <div className="flex items-center" style={{ gap: 8 }}>
                   <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></svg>
@@ -419,24 +667,22 @@ export default function DashboardPage() {
                 </div>
                 <div className="text-right">
                   <p className="font-bold text-green-400" style={{ fontSize: 18 }}>+{d.growth}%</p>
-                  <p style={{ fontSize: 10, color: "var(--text-3)" }}>per hour</p>
+                  <p style={{ fontSize: 10, color: "var(--text-3)" }}>per cycle</p>
                 </div>
               </div>
               <AnimBar pct={(d.biomass / 5) * 100} color="#4ade80" delay={0.4} />
               <div style={{ marginTop: 22, flex: 1, display: "flex", alignItems: "flex-end" }}>
-                <BarChart delay={0.5} bars={[
-                  { label: "Mon", value: 1.8, max: 5, color: "#4ade80" },
-                  { label: "Tue", value: 2.0, max: 5, color: "#4ade80" },
-                  { label: "Wed", value: 1.9, max: 5, color: "#4ade80" },
-                  { label: "Thu", value: 2.2, max: 5, color: "#4ade80" },
-                  { label: "Fri", value: 2.1, max: 5, color: "#22c55e" },
-                  { label: "Sat", value: d.biomass, max: 5, color: "#16a34a" },
-                ]} />
+                <BarChart delay={0.5} bars={d.weeklyBiomass.map((v, i) => ({
+                  label: `C${i + 1}`,
+                  value: v,
+                  max: Math.max(5, ...d.weeklyBiomass),
+                  color: i === d.weeklyBiomass.length - 1 ? "#16a34a" : "#4ade80",
+                }))} />
               </div>
             </motion.div>
 
             {/* Mobile CTA */}
-            <motion.button className="glow-btn dash-mobile-cta cursor-pointer" style={{ display: "none", alignItems: "center", justifyContent: "center", gap: 10, padding: "20px 16px", borderRadius: 20, background: navigating ? "linear-gradient(135deg, #15803d, #16a34a)" : "linear-gradient(135deg, #16a34a, #22c55e)", color: "#fff", fontWeight: 700, fontSize: 15, border: "1px solid rgba(34,197,94,0.3)", boxShadow: "0 8px 30px rgba(34,197,94,0.3)", opacity: navigating ? 0.85 : 1 }} variants={rise} onClick={() => { setNavigating(true); router.push("/talk"); }} disabled={navigating} whileTap={navigating ? {} : { scale: 0.97 }}>
+            <motion.button className="glow-btn dash-mobile-cta cursor-pointer" style={{ display: "none", alignItems: "center", justifyContent: "center", gap: 10, padding: "20px 16px", borderRadius: 20, background: navigating ? "linear-gradient(135deg, #15803d, #16a34a)" : "linear-gradient(135deg, #16a34a, #22c55e)", color: "#fff", fontWeight: 700, fontSize: 15, border: "1px solid rgba(34,197,94,0.3)", boxShadow: "0 8px 30px rgba(34,197,94,0.3)", opacity: navigating ? 0.85 : 1 }} variants={rise} onClick={() => { setNavigating(true); router.push(`/talk?tree=${d.activeTreeId}`); }} disabled={navigating} whileTap={navigating ? {} : { scale: 0.97 }}>
               {navigating ? (<><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" strokeWidth="3" /><path d="M12 2a10 10 0 0 1 10 10" stroke="#fff" strokeWidth="3" strokeLinecap="round" /></svg><span>Loading...</span></>) : (<><svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg><span>Talk to the Tree</span></>)}
             </motion.button>
           </>
@@ -455,7 +701,6 @@ export default function DashboardPage() {
                 ['--card-tint' as any]: 'rgba(56,189,248,0.12)',
               }}
               variants={rise}
-              whileHover={{ scale: 1.01, transition: { duration: 0.3 } }}
             >
               <div className="flex items-center justify-between" style={{ marginBottom: 24 }}>
                 <div className="flex items-center" style={{ gap: 12 }}>
@@ -466,27 +711,76 @@ export default function DashboardPage() {
                 </div>
                 <Badge label="Normal" />
               </div>
-              <div className="flex-1 flex flex-col items-center justify-center" style={{ gap: 12 }}>
-                <motion.p className="font-black text-sky-400 leading-none" style={{ fontSize: "4.5rem", filter: "drop-shadow(0 0 40px rgba(56,189,248,0.3))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.airQuality}</motion.p>
-                <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)" }}>Air Quality Index</p>
+              <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative", overflow: "hidden" }}>
+                <div
+                  className="absolute"
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    opacity: 0.96,
+                    zIndex: 0,
+                    maskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 68%, rgba(0,0,0,0.25) 86%, rgba(0,0,0,0) 100%)",
+                    WebkitMaskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 68%, rgba(0,0,0,0.25) 86%, rgba(0,0,0,0) 100%)",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <Image
+                    src="/env-card-klev.png"
+                    alt="Environment module"
+                    fill
+                    className="object-contain"
+                    style={{
+                      filter: "drop-shadow(0 24px 48px rgba(56,189,248,0.18))",
+                      objectPosition: "center 42%",
+                    }}
+                    priority
+                  />
+                </div>
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 168,
+                    background: "linear-gradient(to top, var(--surface) 0%, transparent 100%)",
+                    borderBottomLeftRadius: 24,
+                    borderBottomRightRadius: 24,
+                    zIndex: 1,
+                    pointerEvents: "none",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    left: "50%",
+                    bottom: 12,
+                    transform: "translateX(-50%)",
+                    zIndex: 2,
+                    textAlign: "center",
+                  }}
+                >
+                  <motion.p className="font-black text-sky-400 leading-none" style={{ fontSize: "4.5rem", filter: "drop-shadow(0 0 40px rgba(56,189,248,0.3))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.airQuality}</motion.p>
+                  <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>AQI (Index)</p>
+                </div>
               </div>
               {/* Env mini stats */}
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
-                {[{ l: "UV INDEX", v: `${d.uvIndex}` }, { l: "CO₂", v: `${d.co2Ambient} ppm` }, { l: "LIGHT", v: `${(d.lightIntensity / 1000).toFixed(1)}k lux` }].map(s => (
+                {[{ l: "ECO2", v: `${d.eco2} ppm` }, { l: "CO2", v: `${d.co2Ambient} ppm` }, { l: "TVOC", v: `${d.tvoc}` }].map(s => (
                   <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "var(--mini-bg)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
-                    <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
+                    <p className="font-bold" style={{ fontSize: 13, marginTop: 4, lineHeight: 1.2, overflowWrap: "anywhere" }}>{s.v}</p>
                   </div>
                 ))}
               </div>
             </motion.div>
 
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>} label="Ambient Temp" value={+d.ambientTemp} unit="°C" min={0} max={50} color="#f97316" delay={0.2} tint="rgba(249,115,22,0.04)" />
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>} label="Humidity" value={+d.humidity} unit="%" min={0} max={100} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>} label="Light Intensity" value={Math.round(d.lightIntensity / 100)} unit="×100 lux" min={0} max={150} color="#fbbf24" delay={0.4} tint="rgba(251,191,36,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>} label="Temperature" value={+d.temp} unit="°C" min={0} max={60} color="#f97316" delay={0.2} tint="rgba(249,115,22,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>} label="Lower Turbidity" value={+d.lTurbidity} unit="NTU" min={0} max={3000} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>} label="Upper Turbidity" value={+d.uTurbidity} unit="NTU" min={0} max={3000} color="#fbbf24" delay={0.4} tint="rgba(251,191,36,0.04)" />
 
             {/* CO₂ & Atmospheric card */}
-            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(56,189,248,0.05) 0%, var(--surface) 50%, rgba(56,189,248,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(56,189,248,0.12)' } as React.CSSProperties} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
+            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(56,189,248,0.05) 0%, var(--surface) 50%, rgba(56,189,248,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(56,189,248,0.12)' } as React.CSSProperties} variants={rise}>
               <div className="flex items-center" style={{ gap: 8, marginBottom: 12 }}>
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>
                 <span className="font-semibold" style={{ fontSize: 15, color: "var(--text-2)" }}>Atmospheric CO₂</span>
@@ -503,14 +797,12 @@ export default function DashboardPage() {
               </div>
               <AnimBar pct={Math.min((d.co2Ambient / 800) * 100, 100)} color="#38bdf8" delay={0.4} />
               <div style={{ marginTop: 22, flex: 1, display: "flex", alignItems: "flex-end" }}>
-                <BarChart delay={0.5} bars={[
-                  { label: "6am", value: 390, max: 800, color: "#38bdf8" },
-                  { label: "9am", value: 405, max: 800, color: "#38bdf8" },
-                  { label: "12pm", value: 420, max: 800, color: "#38bdf8" },
-                  { label: "3pm", value: d.co2Ambient, max: 800, color: "#0ea5e9" },
-                  { label: "6pm", value: 415, max: 800, color: "#38bdf8" },
-                  { label: "9pm", value: 400, max: 800, color: "#0284c7" },
-                ]} />
+                <BarChart delay={0.5} bars={d.co2History.map((v, i) => ({
+                  label: d.historyLabels[i] ?? `P${i + 1}`,
+                  value: v,
+                  max: Math.max(800, ...d.co2History),
+                  color: i === d.co2History.length - 1 ? "#0ea5e9" : "#38bdf8",
+                }))} />
               </div>
             </motion.div>
           </>
@@ -529,7 +821,6 @@ export default function DashboardPage() {
                 ['--card-tint' as any]: 'rgba(168,85,247,0.12)',
               }}
               variants={rise}
-              whileHover={{ scale: 1.01, transition: { duration: 0.3 } }}
             >
               <div className="flex items-center justify-between" style={{ marginBottom: 24 }}>
                 <div className="flex items-center" style={{ gap: 12 }}>
@@ -540,16 +831,65 @@ export default function DashboardPage() {
                 </div>
                 <Badge label="High" />
               </div>
-              <div className="flex-1 flex flex-col items-center justify-center" style={{ gap: 12 }}>
-                <motion.p className="font-black text-purple-400 leading-none" style={{ fontSize: "4.5rem", filter: "drop-shadow(0 0 40px rgba(168,85,247,0.3))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.nutrientEff}%</motion.p>
-                <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)" }}>Nutrient Efficiency</p>
+              <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative", overflow: "hidden" }}>
+                <div
+                  className="absolute"
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    opacity: 0.96,
+                    zIndex: 0,
+                    maskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 68%, rgba(0,0,0,0.25) 86%, rgba(0,0,0,0) 100%)",
+                    WebkitMaskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 68%, rgba(0,0,0,0.25) 86%, rgba(0,0,0,0) 100%)",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <Image
+                    src="/perf-card.png"
+                    alt="Performance module"
+                    fill
+                    className="object-contain"
+                    style={{
+                      filter: "drop-shadow(0 24px 48px rgba(168,85,247,0.18))",
+                      objectPosition: "center 42%",
+                    }}
+                    priority
+                  />
+                </div>
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 168,
+                    background: "linear-gradient(to top, var(--surface) 0%, transparent 100%)",
+                    borderBottomLeftRadius: 24,
+                    borderBottomRightRadius: 24,
+                    zIndex: 1,
+                    pointerEvents: "none",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    left: "50%",
+                    bottom: 12,
+                    transform: "translateX(-50%)",
+                    zIndex: 2,
+                    textAlign: "center",
+                  }}
+                >
+                  <motion.p className="font-black text-purple-400 leading-none" style={{ fontSize: "4.5rem", filter: "drop-shadow(0 0 40px rgba(168,85,247,0.3))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.nutrientEff}%</motion.p>
+                  <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>Nutrient Efficiency</p>
+                </div>
               </div>
               {/* Performance mini stats */}
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
                 {[{ l: "ENERGY", v: `${d.energyUsage}W` }, { l: "WATER", v: `${d.waterUsage} L/h` }, { l: "O₂ PROD", v: `${d.oxygenProd} g/h` }].map(s => (
                   <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "var(--mini-bg)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
-                    <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
+                    <p className="font-bold" style={{ fontSize: 13, marginTop: 4, lineHeight: 1.2, overflowWrap: "anywhere" }}>{s.v}</p>
                   </div>
                 ))}
               </div>
@@ -560,7 +900,7 @@ export default function DashboardPage() {
             <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67 0C8.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>} label="Energy Usage" value={d.energyUsage} unit="W" min={0} max={300} color="#fbbf24" delay={0.4} tint="rgba(251,191,36,0.04)" />
 
             {/* Weekly Biomass Output chart */}
-            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(168,85,247,0.05) 0%, var(--surface) 50%, rgba(168,85,247,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(168,85,247,0.12)' } as React.CSSProperties} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
+            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(168,85,247,0.05) 0%, var(--surface) 50%, rgba(168,85,247,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(168,85,247,0.12)' } as React.CSSProperties} variants={rise}>
               <div className="flex items-center" style={{ gap: 8, marginBottom: 12 }}>
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
                 <span className="font-semibold" style={{ fontSize: 15, color: "var(--text-2)" }}>Weekly Biomass Output</span>
@@ -600,7 +940,6 @@ export default function DashboardPage() {
                 ['--card-tint' as any]: 'rgba(251,191,36,0.12)',
               }}
               variants={rise}
-              whileHover={{ scale: 1.01, transition: { duration: 0.3 } }}
             >
               <div className="flex items-center justify-between" style={{ marginBottom: 24 }}>
                 <div className="flex items-center" style={{ gap: 12 }}>
@@ -615,48 +954,190 @@ export default function DashboardPage() {
                 <motion.p className="font-black text-amber-400 leading-none" style={{ fontSize: "4.5rem", filter: "drop-shadow(0 0 40px rgba(251,191,36,0.3))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.sensorHealth}%</motion.p>
                 <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)" }}>Sensor Health</p>
               </div>
+
+              <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 8 }}>
+                {[
+                  { l: "CPU TEMP", v: `${d.cpuTemp}°C` },
+                  { l: "CPU USAGE", v: `${d.cpuUsage}%` },
+                  { l: "MEMORY", v: `${d.memUsage}%` },
+                ].map((s) => (
+                  <div key={s.l} className="rounded-xl" style={{ padding: "12px 12px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
+                    <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
+                    <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
+                  </div>
+                ))}
+              </div>
+
               {/* System mini stats */}
               <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
-                {[{ l: "FIRMWARE", v: d.firmwareVersion }, { l: "CALIBRATED", v: d.lastCalibration }, { l: "UPTIME", v: d.uptime }].map(s => (
+                {[{ l: "DEVICE", v: d.activeTreeId }, { l: "LAST ONLINE", v: d.lastOnline }, { l: "LAST CHECK", v: d.lastCheck }].map(s => (
                   <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "var(--mini-bg)" }}>
                     <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
                     <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
                   </div>
                 ))}
               </div>
+
+              <div className="grid grid-cols-2" style={{ gap: 10, marginTop: 12 }}>
+                {[
+                  { l: "Battery", v: `${d.batteryPercentage}%`, color: "#4ade80" },
+                  { l: "Charging", v: d.batteryCharging ? "Yes" : "No", color: "#38bdf8" },
+                  { l: "Network", v: d.networkUp ? "Connected" : "Disconnected", color: d.networkUp ? "#4ade80" : "#f97316" },
+                  { l: "Error Flag", v: d.error ? "True" : "False", color: d.error ? "#f97316" : "#a855f7" },
+                ].map((item) => (
+                  <div key={item.l} className="rounded-xl flex items-center justify-between" style={{ padding: "10px 12px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
+                    <span style={{ fontSize: 12, color: "var(--text-2)", fontWeight: 600 }}>{item.l}</span>
+                    <div className="flex items-center" style={{ gap: 6 }}>
+                      <span style={{ fontSize: 12, color: item.color, fontWeight: 700 }}>{item.v}</span>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: item.color }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </motion.div>
 
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M15 2v2M9 2v2M15 20v2M9 20v2M2 15h2M2 9h2M20 15h2M20 9h2"/></svg>} label="CPU Temperature" value={+d.cpuTemp} unit="°C" min={20} max={90} color="#f97316" delay={0.2} tint="rgba(249,115,22,0.04)" />
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M15 2v2M9 2v2M15 20v2M9 20v2M2 15h2M2 9h2M20 15h2M20 9h2"/></svg>} label="CPU Usage" value={d.cpuUsage} unit="%" min={0} max={100} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>} label="Memory Usage" value={d.memUsage} unit="%" min={0} max={100} color="#a855f7" delay={0.4} tint="rgba(168,85,247,0.04)" />
-
-            {/* Device Status card */}
-            <motion.div className="card flex flex-col" style={{ padding: 28, background: "linear-gradient(150deg, rgba(251,191,36,0.05) 0%, var(--surface) 50%, rgba(251,191,36,0.02) 100%)", ['--card-tint' as React.CSSProperties & string]: 'rgba(251,191,36,0.12)' } as React.CSSProperties} variants={rise} whileHover={{ scale: 1.015, transition: { duration: 0.25 } }}>
-              <div className="flex items-center" style={{ gap: 8, marginBottom: 16 }}>
-                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                <span className="font-semibold" style={{ fontSize: 15, color: "var(--text-2)" }}>Device Status</span>
-              </div>
-              {[
-                { l: "Pump Motor", v: d.pumpStatus, color: "#4ade80" },
-                { l: "LED Array", v: d.ledStatus, color: "#38bdf8" },
-                { l: "Network", v: d.networkUp ? "Connected" : "Disconnected", color: d.networkUp ? "#4ade80" : "#f97316" },
-                { l: "Disk Usage", v: `${d.diskUsage}%`, color: "#a855f7" },
-              ].map((item, i) => (
-                <div key={item.l} className="flex items-center justify-between" style={{ padding: "12px 0", borderBottom: i < 3 ? "1px solid var(--row-divider)" : "none" }}>
-                  <span style={{ fontSize: 14, color: "var(--text-2)" }}>{item.l}</span>
-                  <div className="flex items-center" style={{ gap: 8 }}>
-                    <span className="font-bold" style={{ fontSize: 14, color: item.color }}>{item.v}</span>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: item.color, boxShadow: `0 0 8px ${item.color}60` }} />
+            {/* Device Control (single large card) */}
+            <motion.div
+              className="card flex flex-col"
+              style={{
+                padding: 28,
+                gridColumn: "2 / 4",
+                gridRow: "1 / 3",
+                position: "relative",
+                background: "linear-gradient(145deg, rgba(14,165,233,0.06), var(--surface), rgba(34,197,94,0.05))",
+                ['--card-tint' as React.CSSProperties & string]: 'rgba(56,189,248,0.12)',
+              } as React.CSSProperties}
+              variants={rise}
+            >
+              {controlBusy && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    zIndex: 20,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(15,23,42,0.18)",
+                    backdropFilter: "blur(3px)",
+                    WebkitBackdropFilter: "blur(3px)",
+                    borderRadius: 20,
+                    pointerEvents: "auto",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      background: "rgba(255,255,255,0.9)",
+                      border: "1px solid rgba(34,197,94,0.25)",
+                      borderRadius: 999,
+                      padding: "10px 14px",
+                      color: "#166534",
+                      fontWeight: 700,
+                      fontSize: 12,
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}>
+                      <circle cx="12" cy="12" r="10" stroke="rgba(22,101,52,0.2)" strokeWidth="3" />
+                      <path d="M12 2a10 10 0 0 1 10 10" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" />
+                    </svg>
+                    Syncing controls...
                   </div>
                 </div>
-              ))}
-              <div style={{ marginTop: 16 }}>
-                <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, color: "var(--text-3)" }}>Disk Usage</span>
-                  <span style={{ fontSize: 12, color: "var(--text-3)" }}>{d.diskUsage}%</span>
+              )}
+
+              <div className="flex items-center justify-between" style={{ gap: 8, marginBottom: 16 }}>
+                <div className="flex items-center" style={{ gap: 8 }}>
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  <span className="font-semibold" style={{ fontSize: 16, color: "var(--text-2)" }}>Device Control Center</span>
                 </div>
-                <AnimBar pct={d.diskUsage} color="#fbbf24" delay={0.4} />
+                <span style={{ fontSize: 11, color: "var(--text-3)", fontWeight: 700 }}>{controlBusy ? "SYNCING..." : "LIVE"}</span>
               </div>
+
+              <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
+                <ToggleChip label="Air Bubbles" enabled={uiOperations.AirBubbles} busy={controlBusy} onToggle={() => { void toggleOperation("AirBubbles"); }} />
+                <ToggleChip label="Fan" enabled={uiOperations.Fan} busy={controlBusy} onToggle={() => { void toggleOperation("Fan"); }} />
+                <ToggleChip label="Drain" enabled={uiOperations.Drain} busy={controlBusy} onToggle={() => { void toggleOperation("Drain"); }} />
+                <ToggleChip label="Filling" enabled={uiOperations.Filling} busy={controlBusy} onToggle={() => { void toggleOperation("Filling"); }} />
+                <ToggleChip label="Solar Cleaning" enabled={uiOperations.SolarCleaning} busy={controlBusy} onToggle={() => { void toggleOperation("SolarCleaning"); }} />
+                <ToggleChip
+                  label="LED Auto Ops"
+                  enabled={uiOperations.LED1 || uiOperations.LED2 || uiOperations.LED3 || uiOperations.LED4}
+                  busy={controlBusy}
+                  onToggle={() => {
+                    const next = !(uiOperations.LED1 || uiOperations.LED2 || uiOperations.LED3 || uiOperations.LED4);
+                    const nextOps = {
+                      ...uiOperations,
+                      LED1: next,
+                      LED2: next,
+                      LED3: next,
+                      LED4: next,
+                    };
+                    setUiOperations(nextOps);
+                    void patchDevice({
+                      Operations: nextOps,
+                    });
+                  }}
+                />
+              </div>
+
+              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>LED Intensity Control</p>
+              <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
+                <IntensitySlider label="LED1" value={ledDraft.LED1} onChange={(v) => setLedDraft((p) => ({ ...p, LED1: v }))} onCommit={() => { void commitIntensity(); }} />
+                <IntensitySlider label="LED2" value={ledDraft.LED2} onChange={(v) => setLedDraft((p) => ({ ...p, LED2: v }))} onCommit={() => { void commitIntensity(); }} />
+                <IntensitySlider label="LED3" value={ledDraft.LED3} onChange={(v) => setLedDraft((p) => ({ ...p, LED3: v }))} onCommit={() => { void commitIntensity(); }} />
+                <IntensitySlider label="LED4" value={ledDraft.LED4} onChange={(v) => setLedDraft((p) => ({ ...p, LED4: v }))} onCommit={() => { void commitIntensity(); }} />
+              </div>
+
+              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Air Bubble Cycle Timing</p>
+              <div className="grid grid-cols-2" style={{ gap: 10, marginBottom: 14 }}>
+                <div className="rounded-xl" style={{ padding: "10px 12px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-2)", marginBottom: 6 }}>Bubbles ON (sec)</p>
+                  <input type="range" min={1} max={120} value={uiAirBubblesTiming.on} onChange={(e) => { void setBubblesTiming("on", Number(e.target.value)); }} style={{ width: "100%", accentColor: "#22c55e" }} />
+                  <p style={{ fontSize: 11, color: "var(--text-3)" }}>{uiAirBubblesTiming.on}s</p>
+                </div>
+                <div className="rounded-xl" style={{ padding: "10px 12px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-2)", marginBottom: 6 }}>Bubbles OFF (sec)</p>
+                  <input type="range" min={1} max={120} value={uiAirBubblesTiming.off} onChange={(e) => { void setBubblesTiming("off", Number(e.target.value)); }} style={{ width: "100%", accentColor: "#22c55e" }} />
+                  <p style={{ fontSize: 11, color: "var(--text-3)" }}>{uiAirBubblesTiming.off}s</p>
+                </div>
+              </div>
+
+              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Nutrition Dosing (Motor Volumes)</p>
+              <div className="grid" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 8, marginBottom: 14 }}>
+                {([
+                  "Motor1Volume",
+                  "Motor2Volume",
+                  "Motor3Volume",
+                  "Motor4Volume",
+                  "Motor5Volume",
+                ] as const).map((k) => (
+                  <IntensitySlider
+                    key={k}
+                    label={k.replace("Volume", "")}
+                    value={nutritionDraft[k]}
+                    onChange={(v) => setNutritionDraft((p) => ({ ...p, [k]: v }))}
+                    onCommit={() => { void commitNutrition(); }}
+                  />
+                ))}
+              </div>
+
+              <div className="grid grid-cols-4" style={{ gap: 8 }}>
+                {([
+                  { k: "LDR1", v: d.ldrStatus.LDR1 },
+                  { k: "LDR2", v: d.ldrStatus.LDR2 },
+                  { k: "LDR3", v: d.ldrStatus.LDR3 },
+                  { k: "LDR4", v: d.ldrStatus.LDR4 },
+                ] as const).map((ldr) => (
+                  <div key={ldr.k} className="rounded-xl" style={{ padding: "8px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)", textAlign: "center" }}>
+                    <p style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 700 }}>{ldr.k}</p>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: ldr.v ? "#22c55e" : "#94a3b8" }}>{ldr.v ? "LIGHT" : "DARK"}</p>
+                  </div>
+                ))}
+              </div>
+
             </motion.div>
           </>
         )}
@@ -671,15 +1152,15 @@ export default function DashboardPage() {
           variants={rise}
         >
           {(activeTab === 0 ? [
-            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>, l: "CO₂ Captured", v: `${d.co2}g`, bg: "rgba(34,197,94,0.12)" },
-            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>, l: "O₂ Released", v: `${d.o2}g`, bg: "rgba(56,189,248,0.12)" },
-            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67 0C8.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>, l: "Air Purified", v: `${d.air.toLocaleString()} m³`, bg: "rgba(251,191,36,0.12)" },
-            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>, l: "System Uptime", v: d.uptime, bg: "rgba(168,85,247,0.12)" },
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>, l: "Total CO2", v: `${d.co2} kg`, bg: "rgba(34,197,94,0.12)" },
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>, l: "Total O2", v: `${d.o2} kg`, bg: "rgba(56,189,248,0.12)" },
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67 0C8.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>, l: "TVOC", v: `${d.tvoc} ppb`, bg: "rgba(251,191,36,0.12)" },
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>, l: "Last Online", v: d.lastOnline, bg: "rgba(168,85,247,0.12)" },
           ] : activeTab === 1 ? [
-            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>, l: "Ambient Temp", v: `${d.ambientTemp}°C`, bg: "rgba(249,115,22,0.12)" },
-            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>, l: "Humidity", v: `${d.humidity}%`, bg: "rgba(56,189,248,0.12)" },
-            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>, l: "Light", v: `${d.lightIntensity.toLocaleString()} lux`, bg: "rgba(251,191,36,0.12)" },
-            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>, l: "UV Index", v: `${d.uvIndex}`, bg: "rgba(34,197,94,0.12)" },
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>, l: "Temp", v: `${d.temp}°C`, bg: "rgba(249,115,22,0.12)" },
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>, l: "ECO2", v: `${d.eco2} ppm`, bg: "rgba(56,189,248,0.12)" },
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>, l: "LTurbidity", v: `${d.lTurbidity} NTU`, bg: "rgba(251,191,36,0.12)" },
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>, l: "UTurbidity", v: `${d.uTurbidity} NTU`, bg: "rgba(34,197,94,0.12)" },
           ] : activeTab === 2 ? [
             { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>, l: "Photosynthesis", v: `${d.photosynthRate} µmol/s`, bg: "rgba(168,85,247,0.12)" },
             { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>, l: "Carbon Fixed", v: `${d.carbonFixRate} g/h`, bg: "rgba(34,197,94,0.12)" },

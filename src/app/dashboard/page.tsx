@@ -544,7 +544,7 @@ function DashboardPageContent() {
 
   const encodeChangeValue = (command: number, payload: number) => {
     const safePayload = Math.max(0, Math.trunc(payload));
-    return Number(`${command}${safePayload}`);
+    return Number(`${command}${String(safePayload).padStart(3, "0")}`);
   };
 
   const sendChangeCommand = async (
@@ -552,10 +552,16 @@ function DashboardPageContent() {
     payload: number,
     extraUpdates?: Record<string, unknown>,
   ) => {
-    await patchDevice({
-      ...(extraUpdates ?? {}),
-      Change: encodeChangeValue(command, payload),
-    });
+    // 1. Write the encoded Change value on its own so it is never shadowed.
+    await patchDevice({ Change: encodeChangeValue(command, payload) });
+    // 2. Write any accompanying state updates (Operations / Intensity / etc.).
+    if (extraUpdates && Object.keys(extraUpdates).length > 0) {
+      await patchDevice(extraUpdates);
+    }
+    // 3. Reset Change back to 0 after 1 second so the device sees a clean state.
+    setTimeout(() => {
+      void patchDevice({ Change: 0 });
+    }, 1000);
   };
 
   const toggleOperation = async (key: keyof typeof d.operations) => {

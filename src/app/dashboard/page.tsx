@@ -232,7 +232,7 @@ function AQIGauge({ value }: { value: number }) {
 
   const pointerDeg = angleForValue(dialValue);
   const pointerDot = polar(pointerDeg, r);
-  const pointerTri = polar(pointerDeg, r + 15);
+  const pointerTri = polar(pointerDeg, r - 28);
 
   const p0 = polar(angleForValue(0), r + 28);
   const p5 = polar(angleForValue(5), r + 28);
@@ -735,7 +735,46 @@ function DashboardPageContent() {
                     <p style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2, fontWeight: 500 }}>{d.activeTreeId}</p>
                   </div>
                 </div>
-                <Badge label="Optimal" />
+                <div className="flex items-center" style={{ gap: 8 }}>
+                  <Badge label="Optimal" />
+                  <motion.button
+                    onClick={() => { setNavigating(true); router.push(`/talk?tree=${d.activeTreeId}`); }}
+                    disabled={navigating}
+                    className="cursor-pointer"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "6px 14px",
+                      borderRadius: 999,
+                      border: "1px solid rgba(255,255,255,0.22)",
+                      background: navigating ? "#14532d" : "#166534",
+                      color: "#ffffff",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.04em",
+                      opacity: navigating ? 0.85 : 1,
+                      lineHeight: 1,
+                    }}
+                    whileTap={navigating ? {} : { scale: 0.97 }}
+                  >
+                    {navigating ? (
+                      <>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}>
+                          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.35" />
+                          <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                        </svg>
+                        <span>Loading</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+                        <span>Talk</span>
+                      </>
+                    )}
+                  </motion.button>
+                </div>
               </div>
               <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative" }}>
                 <div
@@ -790,10 +829,6 @@ function DashboardPageContent() {
                   <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>CO2 (ppm)</p>
                 </div>
               </div>
-              <motion.button onClick={() => { setNavigating(true); router.push(`/talk?tree=${d.activeTreeId}`); }} disabled={navigating} className="glow-btn flex items-center justify-center cursor-pointer dash-desktop-cta" style={{ gap: 10, marginTop: 20, padding: "16px 0", borderRadius: 16, background: navigating ? "linear-gradient(135deg, #15803d, #16a34a)" : "linear-gradient(135deg, #16a34a, #22c55e)", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", boxShadow: "0 8px 30px rgba(34,197,94,0.3)", opacity: navigating ? 0.85 : 1 }} whileHover={navigating ? {} : { scale: 1.02 }} whileTap={navigating ? {} : { scale: 0.97 }}>
-                {navigating ? (<><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" strokeWidth="3" /><path d="M12 2a10 10 0 0 1 10 10" stroke="#fff" strokeWidth="3" strokeLinecap="round" /></svg><span>Loading…</span></>) : (<><svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg><span>Talk to the Tree</span><span className="pulse-dot rounded-full" style={{ width: 8, height: 8, background: "#fff" }} /></>)}
-              </motion.button>
-
             </motion.div>
 
             <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.43A2 2 0 0 1 14 9.53V2"/><path d="M8.5 2h7"/></svg>} label="pH Level" value={d.ph} unit="pH" min={0} max={14} color="#4ade80" delay={0.2} tint="rgba(34,197,94,0.04)" />

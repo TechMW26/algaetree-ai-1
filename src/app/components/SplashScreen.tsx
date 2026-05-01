@@ -72,8 +72,8 @@ export default function SplashScreen() {
           to   { opacity: 1; transform: translateY(0); }
         }
         @keyframes splashLogoIn {
-          from { opacity: 0; transform: translateY(16px) scale(0.96); filter: blur(6px); }
-          to   { opacity: 1; transform: translateY(0)    scale(1);    filter: blur(0); }
+          from { opacity: 0; transform: translateY(16px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0)    scale(1); }
         }
       `}</style>
       <span

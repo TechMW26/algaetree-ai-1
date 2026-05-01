@@ -421,7 +421,6 @@ function DashboardPageContent() {
             justifyContent: "center",
             gap: 20,
             background: "var(--bg)",
-            backdropFilter: "blur(20px)",
           }}
         >
           <div style={{ position: "relative", width: 60, height: 60 }}>
@@ -505,7 +504,7 @@ function DashboardPageContent() {
         onClick={() => setMenuOpen(false)}
         style={{
           display: "none", position: "fixed", inset: 0, zIndex: 50,
-          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+          background: "rgba(0,0,0,0.6)",
         }}
       />
       <motion.div

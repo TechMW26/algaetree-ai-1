@@ -299,7 +299,6 @@ function TalkPageContent() {
               padding: "6px 12px",
               background: "rgba(59,130,246,0.1)",
               border: "1px solid rgba(59,130,246,0.2)",
-              backdropFilter: "blur(12px)",
               fontSize: 10,
               fontWeight: 600,
               color: "#60a5fa",

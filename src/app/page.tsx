@@ -63,8 +63,6 @@ export default function NetworkPage() {
             background: "var(--surface)",
             padding: "10px 18px",
             borderRadius: 24,
-            backdropFilter: "blur(10px)",
-            WebkitBackdropFilter: "blur(10px)",
             border: "1px solid var(--border)",
             pointerEvents: "auto",
             color: "var(--text-1)",

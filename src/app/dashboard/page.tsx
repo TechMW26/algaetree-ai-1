@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { Suspense, useState, useEffect, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { motion } from "framer-motion";
@@ -253,7 +253,7 @@ function IntensitySlider({
   );
 }
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   const searchParams = useSearchParams();
   const selectedPod = searchParams.get("pod");
   const selectedTreeId = selectedPod === "2" ? "AT00A0002" : "AT00A0001";
@@ -1186,5 +1186,13 @@ export default function DashboardPage() {
         </motion.footer>
       </motion.main>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={null}>
+      <DashboardPageContent />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { Suspense, useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Image from "next/image";
@@ -125,7 +125,7 @@ function SoundWave({ active }: { active: boolean }) {
   );
 }
 
-export default function TalkPage() {
+function TalkPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [conversationStarted, setConversationStarted] = useState(false);
@@ -567,5 +567,13 @@ export default function TalkPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function TalkPage() {
+  return (
+    <Suspense fallback={null}>
+      <TalkPageContent />
+    </Suspense>
   );
 }

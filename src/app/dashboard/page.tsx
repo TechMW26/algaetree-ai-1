@@ -161,84 +161,135 @@ function AnimBar({ pct, color, delay = 0 }: { pct: number; color: string; delay?
   );
 }
 
-/* ── AQI Arc Gauge ── */
+/* ── AQI Circular Meter (reference-style) ── */
 const AQI_BANDS = [
-  { from: 0,   to: 50,  color: "#86efac", label: "Good" },
-  { from: 50,  to: 100, color: "#bef264", label: "Moderate" },
-  { from: 100, to: 150, color: "#fde68a", label: "Sensitive Groups" },
-  { from: 150, to: 200, color: "#fdba74", label: "Unhealthy" },
-  { from: 200, to: 300, color: "#fca5a5", label: "Very Unhealthy" },
-  { from: 300, to: 500, color: "#c4b5fd", label: "Hazardous" },
+  { from: 0, to: 5, color: "#66bb6a" },
+  { from: 5, to: 15, color: "#a3c43a" },
+  { from: 15, to: 30, color: "#f3c93a" },
+  { from: 30, to: 50, color: "#f28a1d" },
 ] as const;
 
 function AQIGauge({ value }: { value: number }) {
-  // semicircle: cx/cy is the pivot at the bottom of the arc area
-  const cx = 150, cy = 138, r = 96, sw = 28, maxAQI = 500;
-  // angle: val=0 → π (left), val=maxAQI → 0 (right)
-  const toXY = (val: number, radius = r) => {
-    const a = Math.PI * (1 - Math.min(Math.max(val, 0), maxAQI) / maxAQI);
-    return { x: +(cx + radius * Math.cos(a)).toFixed(3), y: +(cy - radius * Math.sin(a)).toFixed(3) };
+  const displayValue = Math.max(0, Math.round(value));
+  const dialValue = Math.min(displayValue, 50);
+  const cx = 160;
+  const cy = 152;
+  const r = 112;
+  const sw = 20;
+  const startDeg = 180;
+  const endDeg = 480;
+
+  const quality = displayValue <= 15
+    ? "Good"
+    : displayValue <= 25
+      ? "Moderate"
+      : displayValue <= 40
+        ? "Unhealthy"
+        : "Very Unhealthy";
+
+  const qualityColor = displayValue <= 5
+    ? "#66bb6a"
+    : displayValue <= 15
+      ? "#a3c43a"
+      : displayValue <= 30
+        ? "#f3c93a"
+        : displayValue <= 50
+          ? "#f28a1d"
+          : "#b21f0f";
+
+  const polar = (angleDeg: number, radius: number) => {
+    const rad = ((angleDeg - 90) * Math.PI) / 180;
+    return {
+      x: +(cx + radius * Math.cos(rad)).toFixed(3),
+      y: +(cy + radius * Math.sin(rad)).toFixed(3),
+    };
   };
-  const segPath = (from: number, to: number, gap = maxAQI * 0.014) => {
-    const f = from > 0 ? from + gap : from;
-    const t = to < maxAQI ? to - gap : to;
-    const p1 = toXY(f), p2 = toXY(t);
-    const lg = (t - f) / maxAQI > 0.5 ? 1 : 0;
-    return `M ${p1.x} ${p1.y} A ${r} ${r} 0 ${lg} 1 ${p2.x} ${p2.y}`;
+
+  const arcPath = (fromDeg: number, toDeg: number, radius: number) => {
+    const p1 = polar(fromDeg, radius);
+    const p2 = polar(toDeg, radius);
+    const delta = toDeg - fromDeg;
+    const largeArc = delta > 180 ? 1 : 0;
+    return `M ${p1.x} ${p1.y} A ${radius} ${radius} 0 ${largeArc} 1 ${p2.x} ${p2.y}`;
   };
-  const clampedVal = Math.min(Math.max(value, 0), maxAQI);
-  const currentBand = [...AQI_BANDS].reverse().find(b => clampedVal >= b.from) ?? AQI_BANDS[0];
-  // needle: draw a line from center to just inside the arc outer edge
-  const needleAngle = Math.PI * (1 - clampedVal / maxAQI);
-  const needleTip = toXY(clampedVal, r - sw / 2 + 2);
-  // scale label positions (outside the arc ends)
-  const leftLabel  = toXY(0,   r + sw / 2 + 14);
-  const rightLabel = toXY(maxAQI, r + sw / 2 + 14);
+
+  // Non-linear scale to match the reference labels: 0 -> 5 -> 15 -> 50+
+  const angleForValue = (v: number) => {
+    if (v <= 5) {
+      return 180 + (v / 5) * 55;
+    }
+    if (v <= 15) {
+      return 235 + ((v - 5) / 10) * 125;
+    }
+    return 360 + ((Math.min(v, 50) - 15) / 35) * 120;
+  };
+
+  const bandPath = (from: number, to: number, gapDeg = 2.8) => {
+    const fromDeg = angleForValue(from) + (from > 0 ? gapDeg : 0);
+    const toDeg = angleForValue(to) - (to < 50 ? gapDeg : 0);
+    return arcPath(fromDeg, toDeg, r);
+  };
+
+  const pointerDeg = angleForValue(dialValue);
+  const pointerDot = polar(pointerDeg, r);
+  const pointerTri = polar(pointerDeg, r + 15);
+
+  const p0 = polar(angleForValue(0), r + 28);
+  const p5 = polar(angleForValue(5), r + 28);
+  const p15 = polar(angleForValue(15), r + 28);
+  const p50 = polar(angleForValue(50), r + 28);
+
+  const redTicks = Array.from({ length: 7 }, (_, i) => {
+    const deg = 408 + i * 7;
+    const a = polar(deg, r + 4);
+    const b = polar(deg, r + 20);
+    return { a, b, key: `rt-${i}` };
+  });
 
   return (
-    <div style={{ width: "100%", position: "relative" }}>
-      <svg viewBox="0 0 300 256" style={{ width: "100%", display: "block" }}>
-        <defs>
-          <linearGradient id="aqi-fade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="var(--surface)" stopOpacity="0" />
-            <stop offset="55%"  stopColor="var(--surface)" stopOpacity="0.82" />
-            <stop offset="100%" stopColor="var(--surface)" stopOpacity="1" />
-          </linearGradient>
-        </defs>
+    <svg viewBox="0 0 320 360" style={{ width: "100%", display: "block" }}>
 
-        {/* Track ring */}
-        <path d={segPath(0, maxAQI, 0)} fill="none" stroke="var(--track-strong)" strokeWidth={sw} strokeLinecap="round" />
+      {/* Base ring */}
+      <path d={arcPath(startDeg, endDeg, r)} fill="none" stroke="var(--track-strong)" strokeWidth={sw} strokeLinecap="round" />
 
-        {/* Coloured band segments */}
-        {AQI_BANDS.map(b => (
-          <path key={b.label} d={segPath(b.from, b.to)} fill="none" stroke={b.color} strokeWidth={sw} strokeLinecap="round" opacity={0.88} />
-        ))}
+      {/* Colored zones */}
+      {AQI_BANDS.map((b, idx) => (
+        <path key={`band-${idx}`} d={bandPath(b.from, b.to)} fill="none" stroke={b.color} strokeWidth={sw} strokeLinecap="round" />
+      ))}
+      <path d={arcPath(angleForValue(50) + 2.8, endDeg - 1, r)} fill="none" stroke="#b21f0f" strokeWidth={sw} strokeLinecap="round" />
 
-        {/* Scale labels */}
-        <text x={leftLabel.x}  y={leftLabel.y  + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-3)" }}>0</text>
-        <text x={rightLabel.x} y={rightLabel.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-3)" }}>500</text>
+      {/* Critical red hatch marks */}
+      {redTicks.map((t) => (
+        <line key={t.key} x1={t.a.x} y1={t.a.y} x2={t.b.x} y2={t.b.y} stroke="#b21f0f" strokeWidth="2" strokeLinecap="round" />
+      ))}
 
-        {/* Needle */}
-        <line
-          x1={cx} y1={cy}
-          x2={needleTip.x} y2={needleTip.y}
-          stroke={currentBand.color} strokeWidth="3.5" strokeLinecap="round"
-        />
-        {/* Pivot hub */}
-        <circle cx={cx} cy={cy} r={10} fill={currentBand.color} />
-        <circle cx={cx} cy={cy} r={5}  fill="var(--surface)" />
+      {/* Pointer triangle + marker */}
+      <g transform={`translate(${pointerTri.x} ${pointerTri.y}) rotate(${pointerDeg - 90})`}>
+        <polygon points="0,-7 14,0 0,7" fill="rgba(31,41,55,0.78)" />
+      </g>
+      <circle cx={pointerDot.x} cy={pointerDot.y} r={4.4} fill="rgba(31,41,55,0.78)" />
 
-        {/* Gradient fade behind the text block */}
-        <rect x={0} y={cy - 10} width={300} height={115} fill="url(#aqi-fade)" />
+      {/* Radial guide lines like reference */}
+      {[0, 5, 15, 50].map((v) => {
+        const deg = angleForValue(v);
+        const a = polar(deg, r - sw / 2 - 2);
+        const b = polar(deg, r + sw / 2 + 12);
+        return <line key={`guide-${v}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgba(31,41,55,0.45)" strokeWidth="1.2" />;
+      })}
 
-        {/* AQI numeric value */}
-        <text x={cx} y={cy + 60} textAnchor="middle" fontSize="62" fontWeight="900" fontFamily="inherit" style={{ fill: currentBand.color }}>{value}</text>
+      {/* Scale labels */}
+      <text x={p0.x} y={p0.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-2)" }}>0</text>
+      <text x={p5.x} y={p5.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-2)" }}>5</text>
+      <text x={p15.x} y={p15.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-2)" }}>15</text>
+      <text x={p50.x} y={p50.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-2)" }}>50+</text>
 
-        {/* Category & unit labels */}
-        <text x={cx} y={cy + 86} textAnchor="middle" fontSize="13" fontWeight="700" letterSpacing="3" fontFamily="inherit" style={{ fill: "var(--text-2)" }}>{currentBand.label.toUpperCase()}</text>
-        <text x={cx} y={cy + 103} textAnchor="middle" fontSize="10" fontWeight="600" letterSpacing="4" fontFamily="inherit" style={{ fill: "var(--text-3)" }}>AQI INDEX</text>
-      </svg>
-    </div>
+      {/* Center labels */}
+      <text x={cx} y={118} textAnchor="middle" fontSize="11" fontWeight="500" fontFamily="inherit" style={{ fill: "var(--text-2)" }}>Today&apos;s Index</text>
+      <text x={cx} y={141} textAnchor="middle" fontSize="20" fontWeight="500" fontFamily="inherit" style={{ fill: qualityColor }}>{quality}</text>
+      <text x={cx} y={190} textAnchor="middle" fontSize="62" fontWeight="500" fontFamily="inherit" style={{ fill: qualityColor }}>{displayValue}</text>
+
+      <text x={cx} y={322} textAnchor="middle" fontSize="10" fontWeight="600" letterSpacing="3" fontFamily="inherit" style={{ fill: "var(--text-3)" }}>AQI INDEX</text>
+    </svg>
   );
 }
 

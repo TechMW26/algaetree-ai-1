@@ -472,21 +472,21 @@ function DashboardPageContent() {
     Motor5Volume: 0,
   });
   const operationChangeCodes: Record<keyof typeof uiOperations, number> = {
-    AirBubbles: 15,
-    Drain: 13,
-    Fan: 16,
-    Filling: 14,
-    SolarCleaning: 20,
-    LED1: 17,
-    LED2: 18,
-    LED3: 19,
-    LED4: 19,
+    AirBubbles: 16,
+    Drain: 14,
+    Fan: 17,
+    Filling: 15,
+    SolarCleaning: 22,
+    LED1: 18,
+    LED2: 19,
+    LED3: 20,
+    LED4: 21,
   };
   const ledIntensityChangeCodes: Record<keyof typeof ledDraft, number> = {
     LED1: 10,
     LED2: 11,
     LED3: 12,
-    LED4: 12,
+    LED4: 13,
   };
   const masterLedValue = Math.round(
     (ledDraft.LED1 + ledDraft.LED2 + ledDraft.LED3 + ledDraft.LED4) / 4

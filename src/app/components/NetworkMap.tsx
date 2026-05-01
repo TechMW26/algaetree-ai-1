@@ -61,7 +61,7 @@ export default function NetworkMap() {
       zoomAnimationThreshold: 20,
       zoomControl: false,
       attributionControl: false,
-      preferCanvas: false,
+      preferCanvas: true,
       wheelPxPerZoomLevel: 80,
     });
 
@@ -312,6 +312,26 @@ export default function NetworkMap() {
 
       marker.on("click", () => {
         map.closePopup();
+        const currentZoom = map.getZoom();
+
+        // If already zoomed in, do not zoom out and back in.
+        // Just glide to the new pod and keep current zoom level.
+        if (currentZoom >= 16) {
+          map.flyTo([pod.lat, pod.lng], currentZoom, {
+            animate: true,
+            duration: 0.45,
+            easeLinearity: 0.35,
+            noMoveStart: true,
+          });
+
+          const handleMoveEnd = () => {
+            map.off("moveend", handleMoveEnd);
+            marker.openPopup();
+          };
+          map.on("moveend", handleMoveEnd);
+          return;
+        }
+
         runSequentialZoom(pod.lat, pod.lng, () => {
           marker.openPopup();
         });

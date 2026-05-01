@@ -216,6 +216,30 @@
 /* ===== DASHBOARD — default display ===== */
 .dash-nav-tabs { display: flex; }
 
+/* ===== PERFORMANCE MODE (touch / tablet) =====
+   iPad-class devices struggle with heavy backdrop blur + continuous ambient animations. */
+@media (hover: none), (pointer: coarse) {
+  .card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .ambient-bg {
+    display: none !important;
+  }
+
+  .float-anim,
+  .pulse-dot,
+  .orb-idle,
+  .orb-speaking,
+  .sound-bar,
+  .pulse-green,
+  .pulse-orange,
+  .bar-fill.green {
+    animation: none !important;
+  }
+}
+
 /* ===== MOBILE: Talk page fullscreen ===== */
 @media (max-width: 768px) {
   /* ── Talk page ── */

@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLiveData } from "../hooks/useLiveData";
-import ThemeToggle from "../components/ThemeToggle";
 import DashboardPasswordGate from "../components/DashboardPasswordGate";
 
 const stagger = {
@@ -254,13 +253,42 @@ function IntensitySlider({
   );
 }
 
+function DashboardClock() {
+  const [time, setTime] = useState(() =>
+    new Date().toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+  );
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTime(
+        new Date().toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        })
+      );
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <span className="font-semibold tabular-nums dash-time" style={{ fontSize: 15, color: "var(--text-3)" }}>
+      {time}
+    </span>
+  );
+}
+
 function DashboardPageContent() {
   const searchParams = useSearchParams();
   const selectedPod = searchParams.get("pod");
   const selectedTreeId = selectedPod === "2" ? "AT00A0002" : "AT00A0001";
   const d = useLiveData(selectedTreeId);
   const router = useRouter();
-  const [time, setTime] = useState("");
   const [navigating, setNavigating] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -369,13 +397,6 @@ function DashboardPageContent() {
     <svg key="t3" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>,
   ];
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      setTime(new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }));
-    }, 1000);
-    return () => clearInterval(id);
-  }, []);
-
   return (
     <div className="h-screen flex flex-col" style={{ background: "var(--bg)" }}>
       {/* Ambient BG */}
@@ -471,8 +492,7 @@ function DashboardPageContent() {
         </button>
 
         <div className="flex items-center" style={{ gap: 14 }}>
-          <span className="font-semibold tabular-nums dash-time" style={{ fontSize: 15, color: "var(--text-3)" }}>{time}</span>
-          <ThemeToggle />
+          <DashboardClock />
         </div>
       </motion.nav>
 

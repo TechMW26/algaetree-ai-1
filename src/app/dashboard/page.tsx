@@ -92,39 +92,47 @@ function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint 
 }
 
 /* ── Animated Vertical Bar Chart ── */
-function BarChart({ bars, delay = 0 }: {
+function BarChart({ bars, delay = 0, overflowWhenDense = false }: {
   bars: { label: string; value: number; max: number; color: string }[];
   delay?: number;
+  overflowWhenDense?: boolean;
 }) {
+  const dense = overflowWhenDense && bars.length > 8;
+  const gap = dense ? 3 : 14;
+  const barWidth = dense ? 24 : 36;
+  const innerWidth = dense ? Math.max(100, bars.length * (barWidth + gap)) : undefined;
+
   return (
-    <div className="flex items-end justify-center" style={{ gap: 14, height: 130, width: "100%" }}>
-      {bars.map((b, i) => {
-        const pct = Math.min(b.value / b.max, 1);
-        return (
-          <div key={b.label} className="flex flex-col items-center" style={{ gap: 6, flex: 1 }}>
-            <div
-              style={{
-                width: "100%", maxWidth: 36, height: 110, borderRadius: 10,
-                background: "var(--track)",
-                position: "relative", overflow: "hidden",
-                display: "flex", alignItems: "flex-end",
-              }}
-            >
-              <motion.div
+    <div style={{ width: "100%", overflowX: dense ? "auto" : "hidden", overflowY: "hidden" }}>
+      <div className="flex items-end justify-center" style={{ gap, height: 130, width: dense ? innerWidth : "100%", minWidth: dense ? "max-content" : undefined }}>
+        {bars.map((b, i) => {
+          const pct = Math.min(b.value / b.max, 1);
+          return (
+            <div key={b.label} className="flex flex-col items-center" style={{ gap: 6, flex: dense ? "0 0 auto" : 1, width: dense ? barWidth : undefined }}>
+              <div
                 style={{
-                  width: "100%", borderRadius: 10,
-                  background: `linear-gradient(to top, ${b.color}dd, ${b.color}66)`,
-                  boxShadow: `0 0 16px ${b.color}30`,
+                  width: "100%", maxWidth: barWidth, height: 110, borderRadius: 10,
+                  background: "var(--track)",
+                  position: "relative", overflow: "hidden",
+                  display: "flex", alignItems: "flex-end",
                 }}
-                initial={{ height: 0 }}
-                animate={{ height: `${pct * 100}%` }}
-                transition={{ duration: 1.2, delay: delay + i * 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
-              />
+              >
+                <motion.div
+                  style={{
+                    width: "100%", borderRadius: 10,
+                    background: `linear-gradient(to top, ${b.color}dd, ${b.color}66)`,
+                    boxShadow: `0 0 16px ${b.color}30`,
+                  }}
+                  initial={{ height: 0 }}
+                  animate={{ height: `${pct * 100}%` }}
+                  transition={{ duration: 1.2, delay: delay + i * 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
+                />
+              </div>
+              <span style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 600 }}>{b.label}</span>
             </div>
-            <span style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 600 }}>{b.label}</span>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -439,6 +447,11 @@ function DashboardPageContent() {
   const masterLedValue = Math.round(
     (ledDraft.LED1 + ledDraft.LED2 + ledDraft.LED3 + ledDraft.LED4) / 4
   );
+  const latestWeeklyBiomass = d.weeklyBiomass[d.weeklyBiomass.length - 1] ?? 0;
+  const previousWeeklyBiomass = d.weeklyBiomass[d.weeklyBiomass.length - 2] ?? latestWeeklyBiomass;
+  const weeklyGrowthPct = previousWeeklyBiomass > 0
+    ? +(((latestWeeklyBiomass - previousWeeklyBiomass) / previousWeeklyBiomass) * 100).toFixed(1)
+    : 0;
 
   useEffect(() => {
     setLedDraft(d.ledIntensity);
@@ -866,7 +879,7 @@ function DashboardPageContent() {
                   value: v,
                   max: Math.max(5, ...d.weeklyBiomass),
                   color: i === d.weeklyBiomass.length - 1 ? "#16a34a" : "#4ade80",
-                }))} />
+                }))} overflowWhenDense />
               </div>
             </motion.div>
 
@@ -1046,21 +1059,22 @@ function DashboardPageContent() {
               </div>
               <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
                 <div>
-                  <motion.span className="font-extrabold" style={{ fontSize: 38 }} key={String(d.weeklyBiomass[6])} initial={{ opacity: 0.6, y: 3 }} animate={{ opacity: 1, y: 0 }}>{d.weeklyBiomass[6]}</motion.span>
+                  <motion.span className="font-extrabold" style={{ fontSize: 38 }} key={String(latestWeeklyBiomass)} initial={{ opacity: 0.6, y: 3 }} animate={{ opacity: 1, y: 0 }}>{latestWeeklyBiomass}</motion.span>
                   <span style={{ fontSize: 13, color: "var(--text-3)", marginLeft: 4 }}>g/L today</span>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-purple-400" style={{ fontSize: 18 }}>+12%</p>
-                  <p style={{ fontSize: 10, color: "var(--text-3)" }}>vs last week</p>
+                  <p className="font-bold text-purple-400" style={{ fontSize: 18 }}>{weeklyGrowthPct > 0 ? `+${weeklyGrowthPct}` : `${weeklyGrowthPct}`}%</p>
+                  <p style={{ fontSize: 10, color: "var(--text-3)" }}>vs previous cycle</p>
                 </div>
               </div>
-              <AnimBar pct={(d.weeklyBiomass[6] / 5) * 100} color="#a855f7" delay={0.4} />
+              <AnimBar pct={(latestWeeklyBiomass / Math.max(5, ...d.weeklyBiomass)) * 100} color="#a855f7" delay={0.4} />
               <div style={{ marginTop: 22, flex: 1, display: "flex", alignItems: "flex-end" }}>
                 <BarChart delay={0.5} bars={d.weeklyBiomass.map((v, i) => ({
-                  label: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i],
-                  value: v, max: 5,
-                  color: i === 6 ? "#7c3aed" : "#a855f7",
-                }))} />
+                  label: `C${i + 1}`,
+                  value: v,
+                  max: Math.max(5, ...d.weeklyBiomass),
+                  color: i === d.weeklyBiomass.length - 1 ? "#7c3aed" : "#a855f7",
+                }))} overflowWhenDense />
               </div>
             </motion.div>
           </>

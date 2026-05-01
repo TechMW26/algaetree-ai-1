@@ -184,7 +184,26 @@ type DbRoot = {
 const DEFAULT_TREE_ID = "AT00A0001";
 
 function toNum(v: unknown, fallback = 0): number {
-  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v.trim());
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
+function pickNum(
+  source: Record<string, unknown>,
+  keys: string[],
+  fallback = 0,
+): number {
+  for (const key of keys) {
+    if (key in source) {
+      const n = toNum(source[key], Number.NaN);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return fallback;
 }
 
 function fmtDateTime(date?: string, time?: string): string {
@@ -210,6 +229,7 @@ function diffDays(fromDate?: string): number {
 
 function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): LiveData {
   const sensors = tree.SensorsData ?? {};
+  const sensorsRaw = sensors as Record<string, unknown>;
   const cycleData = tree.Cycle?.Data ?? {};
   const cycleKeys = Object.keys(cycleData)
     .filter((k) => k !== "Count")
@@ -234,6 +254,10 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
   const biomass = toNum(latestCycle?.Biomass, 0);
   const prevBiomass = toNum(prevCycle?.Biomass, biomass || 1);
   const growth = prevBiomass > 0 ? +(((biomass - prevBiomass) / prevBiomass) * 100).toFixed(1) : 0;
+  const cycleBiomass = cycleKeys.map((k) =>
+    toNum((cycleData[k] as DbCyclePoint | undefined)?.Biomass, 0),
+  );
+  const weeklyBiomass = cycleBiomass.length > 0 ? cycleBiomass : [biomass];
 
   const totalCo2 = toNum(tree.Cycle?.TotalCO2Absorbed, toNum(latestCycle?.["CO2Captured "], 0));
   const totalO2 = toNum(tree.Cycle?.TotalO2Released, toNum(latestCycle?.O2Released, 0));
@@ -249,6 +273,13 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
   const freshnessPenalty = diffDays(tree.SensorsData?.LastCheck?.Date) > 2 ? 20 : 0;
   const efficiency = Math.max(0, Math.min(100, (hasError ? 70 : 96) - freshnessPenalty));
 
+  // AQI arrives with mixed key names across device payload versions.
+  const aqiValue = pickNum(
+    sensorsRaw,
+    ["AQI", "Aqi", "aqi", "AirQuality", "Air_Quality", "AirQualityIndex", "AQIIndex", "AQI_Value"],
+    0,
+  );
+
   return {
     activeTreeId: tree.DeviceID ?? treeId,
     location: tree.Location ?? "Unknown",
@@ -258,7 +289,7 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
     error: hasError,
     lastCheck: fmtDateTime(tree.SensorsData?.LastCheck?.Date, tree.SensorsData?.LastCheck?.Time),
     lastOnline: fmtDateTime(tree.LastOnline?.Date, tree.LastOnline?.Time),
-    aqi: toNum(sensors.AQI, 0),
+    aqi: aqiValue,
     eco2: +toNum(sensors.ECO2, 0).toFixed(2),
     tds: toNum(sensors.TDS, 0),
     tvoc: +toNum(sensors.TVOC, 0).toFixed(2),
@@ -280,7 +311,7 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
     maint: Math.max(0, 30 - diffDays(tree.SensorsData?.LastCheck?.Date)),
     co2: +totalCo2.toFixed(2),
     o2: +totalO2.toFixed(2),
-    air: Math.max(0, Math.round(toNum(sensors.AQI, 0) * 30)),
+    air: Math.max(0, Math.round(aqiValue * 30)),
     uptime: `${diffDays(tree.LastOnline?.Date)}d`,
     growth,
     ambientTemp: +toNum(sensors.Temprature, 0).toFixed(2),
@@ -288,31 +319,15 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
     lightIntensity: Math.round(avgLed * 100),
     co2Ambient: toNum(sensors.CO2, 0),
     uvIndex: 0,
-    airQuality: toNum(sensors.AQI, 0),
+    airQuality: aqiValue,
     photosynthRate: +toNum(latestCycle?.Biomass, 0).toFixed(2),
     carbonFixRate: +toNum(latestCycle?.["CO2Captured "], 0).toFixed(2),
     oxygenProd: +toNum(latestCycle?.O2Released, 0).toFixed(2),
     energyUsage: Math.round((led1 + led2 + led3 + led4) / 8),
     waterUsage: 0,
     nutrientEff: Math.max(0, Math.min(100, 100 - Math.min(100, toNum(sensors.TDS, 0)))),
-    weeklyBiomass: [
-      toNum((cycleData["0"] as DbCyclePoint | undefined)?.Biomass, biomass),
-      toNum((cycleData["1"] as DbCyclePoint | undefined)?.Biomass, biomass),
-      toNum((cycleData["2"] as DbCyclePoint | undefined)?.Biomass, biomass),
-      biomass,
-      biomass,
-      biomass,
-      biomass,
-    ],
-    weeklyEnergy: [
-      Math.round(avgLed / 2),
-      Math.round(avgLed / 2),
-      Math.round(avgLed / 2),
-      Math.round(avgLed / 2),
-      Math.round(avgLed / 2),
-      Math.round(avgLed / 2),
-      Math.round(avgLed / 2),
-    ],
+    weeklyBiomass,
+    weeklyEnergy: weeklyBiomass.map(() => Math.round(avgLed / 2)),
     co2History,
     eco2History,
     tempHistory,

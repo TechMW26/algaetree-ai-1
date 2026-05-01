@@ -471,6 +471,23 @@ function DashboardPageContent() {
     Motor4Volume: 0,
     Motor5Volume: 0,
   });
+  const operationChangeCodes: Record<keyof typeof uiOperations, number> = {
+    AirBubbles: 15,
+    Drain: 13,
+    Fan: 16,
+    Filling: 14,
+    SolarCleaning: 20,
+    LED1: 17,
+    LED2: 18,
+    LED3: 19,
+    LED4: 19,
+  };
+  const ledIntensityChangeCodes: Record<keyof typeof ledDraft, number> = {
+    LED1: 10,
+    LED2: 11,
+    LED3: 12,
+    LED4: 12,
+  };
   const masterLedValue = Math.round(
     (ledDraft.LED1 + ledDraft.LED2 + ledDraft.LED3 + ledDraft.LED4) / 4
   );
@@ -525,23 +542,53 @@ function DashboardPageContent() {
     }
   };
 
+  const encodeChangeValue = (command: number, payload: number) => {
+    const safePayload = Math.max(0, Math.trunc(payload));
+    return Number(`${command}${safePayload}`);
+  };
+
+  const sendChangeCommand = async (
+    command: number,
+    payload: number,
+    extraUpdates?: Record<string, unknown>,
+  ) => {
+    await patchDevice({
+      ...(extraUpdates ?? {}),
+      Change: encodeChangeValue(command, payload),
+    });
+  };
+
   const toggleOperation = async (key: keyof typeof d.operations) => {
+    const nextValue = !uiOperations[key];
     const nextOps = {
       ...uiOperations,
-      [key]: !uiOperations[key],
+      [key]: nextValue,
     };
     setUiOperations(nextOps);
-    await patchDevice({
+    await sendChangeCommand(operationChangeCodes[key], nextValue ? 1 : 0, {
       Operations: nextOps,
     });
   };
 
-  const commitIntensity = async () => {
-    await patchDevice({ Intensity: ledDraft });
+  const commitIntensity = async (
+    nextIntensity: typeof ledDraft,
+    targets: (keyof typeof ledDraft)[],
+  ) => {
+    for (let i = 0; i < targets.length; i += 1) {
+      const target = targets[i];
+      const isLast = i === targets.length - 1;
+      await sendChangeCommand(
+        ledIntensityChangeCodes[target],
+        nextIntensity[target],
+        isLast ? { Intensity: nextIntensity } : undefined,
+      );
+    }
   };
 
-  const commitNutrition = async () => {
-    await patchDevice({ NutritionDosing: nutritionDraft });
+  const commitNutrition = async (motor: keyof typeof nutritionDraft) => {
+    await sendChangeCommand(8, nutritionDraft[motor], {
+      NutritionDosing: nutritionDraft,
+    });
   };
 
   const setBubblesTiming = async (key: "on" | "off", value: number) => {
@@ -550,7 +597,7 @@ function DashboardPageContent() {
       off: key === "off" ? value : uiAirBubblesTiming.off,
     };
     setUiAirBubblesTiming(next);
-    await patchDevice({
+    await sendChangeCommand(7, key === "on" ? next.on : next.off, {
       Operations: {
         ...uiOperations,
         AirBubblesTiming: {
@@ -1279,9 +1326,18 @@ function DashboardPageContent() {
                       LED4: next,
                     };
                     setUiOperations(nextOps);
-                    void patchDevice({
-                      Operations: nextOps,
-                    });
+                    const ledKeys: (keyof typeof ledIntensityChangeCodes)[] = ["LED1", "LED2", "LED3", "LED4"];
+                    void (async () => {
+                      for (let i = 0; i < ledKeys.length; i += 1) {
+                        const ledKey = ledKeys[i];
+                        const isLast = i === ledKeys.length - 1;
+                        await sendChangeCommand(
+                          operationChangeCodes[ledKey],
+                          next ? 1 : 0,
+                          isLast ? { Operations: nextOps } : undefined,
+                        );
+                      }
+                    })();
                   }}
                 />
               </div>
@@ -1295,15 +1351,15 @@ function DashboardPageContent() {
                     setLedDraft({ LED1: v, LED2: v, LED3: v, LED4: v });
                   }}
                   onCommit={() => {
-                    void commitIntensity();
+                    void commitIntensity(ledDraft, ["LED1", "LED2", "LED3", "LED4"]);
                   }}
                 />
               </div>
               <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
-                <IntensitySlider label="LED1" value={ledDraft.LED1} onChange={(v) => setLedDraft((p) => ({ ...p, LED1: v }))} onCommit={() => { void commitIntensity(); }} />
-                <IntensitySlider label="LED2" value={ledDraft.LED2} onChange={(v) => setLedDraft((p) => ({ ...p, LED2: v }))} onCommit={() => { void commitIntensity(); }} />
-                <IntensitySlider label="LED3" value={ledDraft.LED3} onChange={(v) => setLedDraft((p) => ({ ...p, LED3: v }))} onCommit={() => { void commitIntensity(); }} />
-                <IntensitySlider label="LED4" value={ledDraft.LED4} onChange={(v) => setLedDraft((p) => ({ ...p, LED4: v }))} onCommit={() => { void commitIntensity(); }} />
+                <IntensitySlider label="LED1" value={ledDraft.LED1} onChange={(v) => setLedDraft((p) => ({ ...p, LED1: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED1"]); }} />
+                <IntensitySlider label="LED2" value={ledDraft.LED2} onChange={(v) => setLedDraft((p) => ({ ...p, LED2: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED2"]); }} />
+                <IntensitySlider label="LED3" value={ledDraft.LED3} onChange={(v) => setLedDraft((p) => ({ ...p, LED3: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED3"]); }} />
+                <IntensitySlider label="LED4" value={ledDraft.LED4} onChange={(v) => setLedDraft((p) => ({ ...p, LED4: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED4"]); }} />
               </div>
 
               <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Air Bubble Cycle Timing</p>
@@ -1334,7 +1390,7 @@ function DashboardPageContent() {
                     label={k.replace("Volume", "")}
                     value={nutritionDraft[k]}
                     onChange={(v) => setNutritionDraft((p) => ({ ...p, [k]: v }))}
-                    onCommit={() => { void commitNutrition(); }}
+                    onCommit={() => { void commitNutrition(k); }}
                   />
                 ))}
               </div>

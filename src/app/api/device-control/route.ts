@@ -6,6 +6,7 @@ type ControlPayload = {
 };
 
 const ALLOWED_KEYS = [
+  "Change",
   "Intensity",
   "Operations",
   "NutritionDosing",

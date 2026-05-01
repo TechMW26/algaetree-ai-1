@@ -529,7 +529,11 @@ function DashboardPageContent() {
     d.nutritionDosing.Motor5Volume,
   ]);
 
-  const patchDevice = async (updates: Record<string, unknown>) => {
+  const patchDevice = async (
+    updates: Record<string, unknown>,
+    options?: { manual?: boolean },
+  ) => {
+    if (!options?.manual) return;
     setPendingSyncCount((c) => c + 1);
     try {
       await fetch("/api/device-control", {
@@ -553,15 +557,11 @@ function DashboardPageContent() {
     extraUpdates?: Record<string, unknown>,
   ) => {
     // 1. Write the encoded Change value on its own so it is never shadowed.
-    await patchDevice({ Change: encodeChangeValue(command, payload) });
+    await patchDevice({ Change: encodeChangeValue(command, payload) }, { manual: true });
     // 2. Write any accompanying state updates (Operations / Intensity / etc.).
     if (extraUpdates && Object.keys(extraUpdates).length > 0) {
-      await patchDevice(extraUpdates);
+      await patchDevice(extraUpdates, { manual: true });
     }
-    // 3. Reset Change back to 0 after 1 second so the device sees a clean state.
-    setTimeout(() => {
-      void patchDevice({ Change: 0 });
-    }, 1000);
   };
 
   const toggleOperation = async (key: keyof typeof d.operations) => {

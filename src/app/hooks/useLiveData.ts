@@ -182,6 +182,7 @@ type DbRoot = {
 };
 
 const DEFAULT_TREE_ID = "AT00A0001";
+const POD_DISPLAY_LOCATION = "Swami Vivekananda Theme Park";
 
 function toNum(v: unknown, fallback = 0): number {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -225,6 +226,11 @@ function diffDays(fromDate?: string): number {
   if (!start) return 0;
   const ms = Date.now() - start.getTime();
   return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+}
+
+function getDisplayLocation(treeId: string, fallback?: string): string {
+  if (treeId === "AT00A0001" || treeId === "AT00A0002") return POD_DISPLAY_LOCATION;
+  return fallback ?? "Unknown";
 }
 
 function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): LiveData {
@@ -282,7 +288,7 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
 
   return {
     activeTreeId: tree.DeviceID ?? treeId,
-    location: tree.Location ?? "Unknown",
+    location: getDisplayLocation(treeId, tree.Location),
     treeCount: noOfDevices,
     batteryPercentage,
     batteryCharging: !!tree.Battery?.Charging,

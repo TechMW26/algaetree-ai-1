@@ -16,20 +16,41 @@ const rise = {
   show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" as const } },
 };
 
+const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
+const clampPercent = (value: number) => Math.min(Math.max(value, 0), 100);
+
+// Dashboard ranges are tuned for operational readability rather than raw sensor ceilings.
+const GAUGE_RANGES = {
+  bioReactor: {
+    ph: { min: 0, max: 18 },
+    tds: { min: 0, max: 1500 },
+    temperature: { min: 0, max: 45 },
+    efficiency: { min: 0, max: 100 },
+  },
+  environment: {
+    temperature: { min: 0, max: 45 },
+    lowerTurbidity: { min: 0, max: 4000 },
+    upperTurbidity: { min: 0, max: 4000 },
+  },
+  performance: {
+    photosynthesisRate: { min: 0, max: 40 },
+    carbonFixation: { min: 0, max: 12 },
+    energyUsage: { min: 0, max: 400 },
+  },
+} as const;
+
 /* ── Animated Semicircle Gauge ── */
 function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint }: {
   value: number; min: number; max: number; label: string; unit: string;
   color: string; icon: ReactNode; delay?: number; tint: string;
 }) {
-  const pct = Math.min(Math.max((value - min) / (max - min), 0), 1);
+  const pct = clamp01((value - min) / (max - min));
   const valueText = String(value);
   const valueChars = valueText.length;
   const valueFontSize = Math.max(22, 58 - Math.max(0, valueChars - 4) * 6);
   const valueTextLength = valueChars >= 9 ? 144 : valueChars >= 8 ? 152 : valueChars >= 7 ? 160 : undefined;
-  const r = 90;
-  const circumHalf = Math.PI * r;
-  const dashLen = pct * circumHalf;
   const trackColor = "var(--track-strong)";
+  const showValueArc = pct > 0;
 
   return (
     <motion.div
@@ -55,17 +76,21 @@ function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint 
             strokeLinecap="round"
           />
           {/* Value arc */}
-          <motion.path
-            d="M 12 120 A 90 90 0 0 1 208 120"
-            fill="none"
-            stroke={color}
-            strokeWidth="18"
-            strokeLinecap="round"
-            strokeDasharray={`${circumHalf}`}
-            initial={{ strokeDashoffset: circumHalf }}
-            animate={{ strokeDashoffset: circumHalf - dashLen }}
-            transition={{ duration: 1.6, delay, ease: [0.25, 0.46, 0.45, 0.94] }}
-          />
+          {showValueArc ? (
+            <motion.path
+              d="M 12 120 A 90 90 0 0 1 208 120"
+              fill="none"
+              stroke={color}
+              strokeWidth="18"
+              strokeLinecap="round"
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: pct, opacity: 1 }}
+              transition={{
+                pathLength: { duration: 1.6, delay, ease: [0.25, 0.46, 0.45, 0.94] },
+                opacity: { duration: 0.08, delay: delay + 0.06, ease: "linear" },
+              }}
+            />
+          ) : null}
           {/* Center value as SVG text for proper scaling */}
           <text
             x="110"
@@ -106,7 +131,7 @@ function BarChart({ bars, delay = 0, overflowWhenDense = false }: {
     <div style={{ width: "100%", overflowX: dense ? "auto" : "hidden", overflowY: "hidden" }}>
       <div className="flex items-end justify-center" style={{ gap, height: 130, width: dense ? innerWidth : "100%", minWidth: dense ? "max-content" : undefined }}>
         {bars.map((b, i) => {
-          const pct = Math.min(b.value / b.max, 1);
+          const pct = b.max > 0 ? clamp01(b.value / b.max) : 0;
           return (
             <div key={b.label} className="flex flex-col items-center" style={{ gap: 6, flex: dense ? "0 0 auto" : 1, width: dense ? barWidth : undefined }}>
               <div
@@ -153,6 +178,8 @@ function Badge({ label, color = "green" }: { label: string; color?: string }) {
 
 /* ── Animated horizontal progress bar ── */
 function AnimBar({ pct, color, delay = 0 }: { pct: number; color: string; delay?: number }) {
+  const safePct = clampPercent(pct);
+
   return (
     <div className="bar-track" style={{ marginTop: 12 }}>
       <motion.div
@@ -162,7 +189,7 @@ function AnimBar({ pct, color, delay = 0 }: { pct: number; color: string; delay?
           boxShadow: `0 0 12px ${color}40`,
         }}
         initial={{ width: 0 }}
-        animate={{ width: `${Math.min(pct, 100)}%` }}
+        animate={{ width: `${safePct}%` }}
         transition={{ duration: 1.2, delay, ease: [0.25, 0.46, 0.45, 0.94] }}
       />
     </div>
@@ -844,13 +871,13 @@ function DashboardPageContent() {
               </div>
             </motion.div>
 
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.43A2 2 0 0 1 14 9.53V2"/><path d="M8.5 2h7"/></svg>} label="pH Level" value={d.ph} unit="pH" min={0} max={14} color="#4ade80" delay={0.2} tint="rgba(34,197,94,0.04)" />
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>} label="TDS" value={d.tds} unit="ppm" min={0} max={1200} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>} label="Temperature" value={d.temp} unit="°C" min={0} max={50} color="#f97316" delay={0.4} tint="rgba(249,115,22,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.43A2 2 0 0 1 14 9.53V2"/><path d="M8.5 2h7"/></svg>} label="pH Level" value={d.ph} unit="pH" min={GAUGE_RANGES.bioReactor.ph.min} max={GAUGE_RANGES.bioReactor.ph.max} color="#4ade80" delay={0.2} tint="rgba(34,197,94,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>} label="TDS" value={d.tds} unit="ppm" min={GAUGE_RANGES.bioReactor.tds.min} max={GAUGE_RANGES.bioReactor.tds.max} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>} label="Temperature" value={d.temp} unit="°C" min={GAUGE_RANGES.bioReactor.temperature.min} max={GAUGE_RANGES.bioReactor.temperature.max} color="#f97316" delay={0.4} tint="rgba(249,115,22,0.04)" />
 
             {/* Efficiency gauge (mobile only) */}
             <div className="dash-mobile-efficiency" style={{ display: "none" }}>
-              <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>} label="Efficiency" value={d.efficiency} unit="%" min={0} max={100} color="#4ade80" delay={0.35} tint="rgba(34,197,94,0.04)" />
+              <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>} label="Efficiency" value={d.efficiency} unit="%" min={GAUGE_RANGES.bioReactor.efficiency.min} max={GAUGE_RANGES.bioReactor.efficiency.max} color="#4ade80" delay={0.35} tint="rgba(34,197,94,0.04)" />
             </div>
 
             {/* Biomass + Growth */}
@@ -927,9 +954,9 @@ function DashboardPageContent() {
               </div>
             </motion.div>
 
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>} label="Temperature" value={+d.temp} unit="°C" min={0} max={60} color="#f97316" delay={0.2} tint="rgba(249,115,22,0.04)" />
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>} label="Lower Turbidity" value={+d.lTurbidity} unit="NTU" min={0} max={3000} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>} label="Upper Turbidity" value={+d.uTurbidity} unit="NTU" min={0} max={3000} color="#fbbf24" delay={0.4} tint="rgba(251,191,36,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>} label="Temperature" value={+d.temp} unit="°C" min={GAUGE_RANGES.environment.temperature.min} max={GAUGE_RANGES.environment.temperature.max} color="#f97316" delay={0.2} tint="rgba(249,115,22,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>} label="Lower Turbidity" value={+d.lTurbidity} unit="NTU" min={GAUGE_RANGES.environment.lowerTurbidity.min} max={GAUGE_RANGES.environment.lowerTurbidity.max} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>} label="Upper Turbidity" value={+d.uTurbidity} unit="NTU" min={GAUGE_RANGES.environment.upperTurbidity.min} max={GAUGE_RANGES.environment.upperTurbidity.max} color="#fbbf24" delay={0.4} tint="rgba(251,191,36,0.04)" />
 
             {/* CO₂ & Atmospheric card */}
             <motion.div className="card flex flex-col" style={{ padding: 28, background: "var(--surface)", ['--card-tint' as React.CSSProperties & string]: 'rgba(56,189,248,0.12)' } as React.CSSProperties} variants={rise}>
@@ -1047,9 +1074,9 @@ function DashboardPageContent() {
               </div>
             </motion.div>
 
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>} label="Photosynthesis Rate" value={+d.photosynthRate} unit="µmol/s" min={0} max={30} color="#a855f7" delay={0.2} tint="rgba(168,85,247,0.04)" />
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>} label="Carbon Fixation" value={+d.carbonFixRate} unit="g/h" min={0} max={10} color="#4ade80" delay={0.3} tint="rgba(34,197,94,0.04)" />
-            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67 0C8.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>} label="Energy Usage" value={d.energyUsage} unit="W" min={0} max={300} color="#fbbf24" delay={0.4} tint="rgba(251,191,36,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>} label="Photosynthesis Rate" value={+d.photosynthRate} unit="µmol/s" min={GAUGE_RANGES.performance.photosynthesisRate.min} max={GAUGE_RANGES.performance.photosynthesisRate.max} color="#a855f7" delay={0.2} tint="rgba(168,85,247,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>} label="Carbon Fixation" value={+d.carbonFixRate} unit="g/h" min={GAUGE_RANGES.performance.carbonFixation.min} max={GAUGE_RANGES.performance.carbonFixation.max} color="#4ade80" delay={0.3} tint="rgba(34,197,94,0.04)" />
+            <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67 0C8.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>} label="Energy Usage" value={d.energyUsage} unit="W" min={GAUGE_RANGES.performance.energyUsage.min} max={GAUGE_RANGES.performance.energyUsage.max} color="#fbbf24" delay={0.4} tint="rgba(251,191,36,0.04)" />
 
             {/* Weekly Biomass Output chart */}
             <motion.div className="card flex flex-col" style={{ padding: 28, background: "var(--surface)", ['--card-tint' as React.CSSProperties & string]: 'rgba(168,85,247,0.12)' } as React.CSSProperties} variants={rise}>

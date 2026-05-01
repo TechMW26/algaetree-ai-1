@@ -3,48 +3,124 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { useLiveData, type LiveData } from "../hooks/useLiveData";
 
 type Pod = {
   id: number;
+  treeId: string;
   lat: number;
   lng: number;
-  location: string;
-  efficiency: string;
-  aqi: number;
-  health: string;
-  maintenance: string;
+  fallbackLocation: string;
+  country: "India" | "UAE";
 };
+
+const COUNTRY_GEOJSON_URLS = {
+  India: "https://raw.githubusercontent.com/datameet/maps/master/Country/india-composite.geojson",
+  UAE: "https://raw.githubusercontent.com/mledoze/countries/master/data/are.geo.json",
+} as const;
 
 const PODS: Pod[] = [
   {
     id: 1,
+    treeId: "AT00A0001",
     lat: 23.258690000000000,
     lng: 77.430980000000000,
-    location: "Bhopal",
-    efficiency: "98%",
-    aqi: 88,
-    health: "Optimal",
-    maintenance: "12d",
+    fallbackLocation: "Swami Vivekananda Theme Park",
+    country: "India",
   },
   {
     id: 2,
+    treeId: "AT00A0002",
     lat: 23.258690000000000,
     lng: 77.431160000000000,
-    location: "Bhopal",
-    efficiency: "97%",
-    aqi: 90,
-    health: "Optimal",
-    maintenance: "14d",
+    fallbackLocation: "Swami Vivekananda Theme Park",
+    country: "India",
   },
 ];
 
-// High-detail India boundary (datameet/maps) — follows official India border (incl. J&K, Ladakh).
-const INDIA_GEOJSON_URL =
-  "https://raw.githubusercontent.com/datameet/maps/master/Country/india-composite.geojson";
+type PodPopupData = {
+  id: number;
+  location: string;
+  treeId: string;
+  efficiencyText: string;
+  aqiValue: number | null;
+  healthText: string;
+  maintenanceText: string;
+  online: boolean;
+  statusTitle: string;
+};
 
-// High-detail UAE boundary (mledoze/countries — ~448 vertices, CORS-friendly via raw.githubusercontent.com).
-const UAE_GEOJSON_URL =
-  "https://raw.githubusercontent.com/mledoze/countries/master/data/are.geo.json";
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function getHealthText(data: LiveData): string {
+  if (!data.networkUp) return "Offline";
+  if (data.error || data.sensorHealth < 70) return "Attention";
+  if (data.sensorHealth < 90) return "Stable";
+  return "Optimal";
+}
+
+function buildPodPopupData(pod: Pod, data: LiveData): PodPopupData {
+  const isLoading = data.location === "Loading..." && data.activeTreeId === pod.treeId;
+  const hasRequestedTree = data.activeTreeId === pod.treeId;
+
+  if (!hasRequestedTree && !isLoading) {
+    return {
+      id: pod.id,
+      location: pod.fallbackLocation,
+      treeId: pod.treeId,
+      efficiencyText: "--",
+      aqiValue: null,
+      healthText: "No Data",
+      maintenanceText: "--",
+      online: false,
+      statusTitle: "No live data",
+    };
+  }
+
+  return {
+    id: pod.id,
+    location: data.location === "Loading..." ? pod.fallbackLocation : data.location,
+    treeId: pod.treeId,
+    efficiencyText: `${Math.max(0, Math.round(data.efficiency))}%`,
+    aqiValue: Math.max(0, Math.round(data.aqi)),
+    healthText: getHealthText(data),
+    maintenanceText: `${Math.max(0, Math.round(data.maint))}d`,
+    online: isLoading ? true : data.networkUp,
+    statusTitle: isLoading ? "Loading live data" : data.networkUp ? "Online" : "Offline",
+  };
+}
+
+function buildPopupHtml(pod: PodPopupData): string {
+  const aqiColor = pod.aqiValue !== null && pod.aqiValue > 100 ? "#f97316" : "#22c55e";
+  const statusColor = pod.online ? "#4ade80" : "#f97316";
+  const aqiText = pod.aqiValue === null ? "--" : String(pod.aqiValue);
+
+  return `
+    <div class="pod-card">
+      <div class="pod-header">
+        <div class="pod-title-wrap">
+          <span class="pod-title">${escapeHtml(pod.location)}</span>
+          <span class="pod-subtitle">${escapeHtml(pod.treeId)} • Live Tree</span>
+        </div>
+        <span class="pod-status" title="${escapeHtml(pod.statusTitle)}" style="background:${statusColor}"></span>
+      </div>
+      <div class="pod-stats">
+        <div class="pod-stat"><span class="stat-label">Efficiency</span><span class="stat-value" style="color:#22c55e">${pod.efficiencyText}</span></div>
+        <div class="pod-stat"><span class="stat-label">AQI</span><span class="stat-value" style="color:${aqiColor}">${aqiText}</span></div>
+        <div class="pod-stat"><span class="stat-label">Health</span><span class="stat-value">${escapeHtml(pod.healthText)}</span></div>
+        <div class="pod-stat"><span class="stat-label">Next Maint.</span><span class="stat-value">${pod.maintenanceText}</span></div>
+      </div>
+      <button class="pod-action" data-pod="${pod.id}" type="button">View Dashboard →</button>
+    </div>
+  `;
+}
 
 const MAP_ASSET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -86,6 +162,18 @@ function writeCachedMapAsset(url: string, data: unknown): void {
 
 export default function NetworkMap() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const markersRef = useRef<Record<number, L.Marker>>({});
+  const treeOne = useLiveData("AT00A0001");
+  const treeTwo = useLiveData("AT00A0002");
+  const livePodDataRef = useRef<Record<number, PodPopupData>>({
+    1: buildPodPopupData(PODS[0], treeOne),
+    2: buildPodPopupData(PODS[1], treeTwo),
+  });
+
+  livePodDataRef.current = {
+    1: buildPodPopupData(PODS[0], treeOne),
+    2: buildPodPopupData(PODS[1], treeTwo),
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -253,8 +341,10 @@ export default function NetworkMap() {
         });
     };
 
-    addCountryOutline(INDIA_GEOJSON_URL);
-    addCountryOutline(UAE_GEOJSON_URL);
+    const countriesWithTrees = Array.from(new Set(PODS.map((pod) => pod.country)));
+    countriesWithTrees.forEach((country) => {
+      addCountryOutline(COUNTRY_GEOJSON_URLS[country]);
+    });
 
     // Recenter custom control — fits the map to highlighted countries.
     const RecenterControl = L.Control.extend({
@@ -334,30 +424,11 @@ export default function NetworkMap() {
     PODS.forEach((pod) => {
       const marker = L.marker([pod.lat, pod.lng], { icon: algaeIcon }).addTo(map);
 
-      const aqiColor = pod.aqi > 100 ? "#f97316" : "#22c55e";
-      const popupHtml = `
-        <div class="pod-card">
-          <div class="pod-header">
-            <div class="pod-title-wrap">
-              <span class="pod-title">${pod.location}</span>
-              <span class="pod-subtitle">${pod.id === 1 ? "AT001" : "AT002"} • Live Tree</span>
-            </div>
-            <span class="pod-status" title="Online"></span>
-          </div>
-          <div class="pod-stats">
-            <div class="pod-stat"><span class="stat-label">Efficiency</span><span class="stat-value" style="color:#22c55e">${pod.efficiency}</span></div>
-            <div class="pod-stat"><span class="stat-label">AQI</span><span class="stat-value" style="color:${aqiColor}">${pod.aqi}</span></div>
-            <div class="pod-stat"><span class="stat-label">Health</span><span class="stat-value">${pod.health}</span></div>
-            <div class="pod-stat"><span class="stat-label">Next Maint.</span><span class="stat-value">${pod.maintenance}</span></div>
-          </div>
-          <button class="pod-action" data-pod="${pod.id}" type="button">View Dashboard →</button>
-        </div>
-      `;
-
-      marker.bindPopup(popupHtml, {
+      marker.bindPopup(buildPopupHtml(livePodDataRef.current[pod.id]), {
         closeButton: false,
         offset: [0, -10],
       });
+      markersRef.current[pod.id] = marker;
 
       marker.on("click", () => {
         map.closePopup();
@@ -387,37 +458,37 @@ export default function NetworkMap() {
       });
     });
 
-    // Delegate click on the popup CTA
-    map.on("popupopen", (e) => {
-      const popupElement = (e.popup.getElement() as HTMLElement | null);
-      if (!popupElement) return;
-      
-      const button = popupElement.querySelector(".pod-action") as HTMLButtonElement | null;
+    const handleContainerClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest(".pod-action") as HTMLButtonElement | null;
       if (!button) return;
-      
-      // Remove any existing listeners to prevent duplicates
-      button.replaceWith(button.cloneNode(true));
-      const newButton = popupElement.querySelector(".pod-action") as HTMLButtonElement | null;
-      
-      if (newButton) {
-        newButton.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          const id = newButton.getAttribute("data-pod");
-          // Use full navigation here to avoid intermittent client-transition blank screens.
-          window.location.href = `/dashboard?pod=${id ?? ""}`;
-        });
-      }
-    });
+
+      event.preventDefault();
+      event.stopPropagation();
+      const id = button.getAttribute("data-pod");
+      window.location.href = `/dashboard?pod=${id ?? ""}`;
+    };
+
+    containerRef.current.addEventListener("click", handleContainerClick);
 
     return () => {
       cancelled = true;
       abortController.abort();
       themeObserver.disconnect();
       map.off("zoomend", updateLayerByZoom);
+      containerRef.current?.removeEventListener("click", handleContainerClick);
+      markersRef.current = {};
       map.remove();
     };
   }, []);
+
+  useEffect(() => {
+    Object.values(livePodDataRef.current).forEach((pod) => {
+      const marker = markersRef.current[pod.id];
+      if (!marker) return;
+      marker.setPopupContent(buildPopupHtml(pod));
+    });
+  });
 
   return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 }

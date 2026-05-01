@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -49,7 +48,6 @@ const UAE_GEOJSON_URL =
 
 export default function NetworkMap() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -59,6 +57,8 @@ export default function NetworkMap() {
       zoom: 5,
       minZoom: 4,
       maxZoom: 20,
+      zoomAnimation: true,
+      zoomAnimationThreshold: 20,
       zoomControl: false,
       attributionControl: false,
       preferCanvas: false,
@@ -242,6 +242,46 @@ export default function NetworkMap() {
       popupAnchor: [0, -20],
     });
 
+    let zoomSequenceId = 0;
+
+    const runSequentialZoom = (lat: number, lng: number, onDone: () => void) => {
+      zoomSequenceId += 1;
+      const currentSequence = zoomSequenceId;
+
+      const currentZoom = map.getZoom();
+      const steps = [
+        Math.min(12, Math.max(currentZoom + 3, 10)),
+        16,
+        20,
+      ];
+
+      const nextStep = (index: number) => {
+        if (currentSequence !== zoomSequenceId) return;
+
+        if (index >= steps.length) {
+          onDone();
+          return;
+        }
+
+        map.flyTo([lat, lng], steps[index], {
+          animate: true,
+          duration: index === steps.length - 1 ? 0.38 : 0.3,
+          easeLinearity: 0.35,
+          noMoveStart: true,
+        });
+
+        const handleMoveEnd = () => {
+          map.off("moveend", handleMoveEnd);
+          if (currentSequence !== zoomSequenceId) return;
+          nextStep(index + 1);
+        };
+
+        map.on("moveend", handleMoveEnd);
+      };
+
+      nextStep(0);
+    };
+
     PODS.forEach((pod) => {
       const marker = L.marker([pod.lat, pod.lng], { icon: algaeIcon }).addTo(map);
 
@@ -270,24 +310,35 @@ export default function NetworkMap() {
         offset: [0, -10],
       });
 
-      marker.on("mouseover", function () {
-        marker.openPopup();
-      });
       marker.on("click", () => {
-        router.push(`/dashboard?pod=${pod.id}`);
+        map.closePopup();
+        runSequentialZoom(pod.lat, pod.lng, () => {
+          marker.openPopup();
+        });
       });
     });
 
     // Delegate click on the popup CTA
     map.on("popupopen", (e) => {
-      const el = (e.popup.getElement() as HTMLElement | null)?.querySelector(
-        ".pod-action"
-      ) as HTMLElement | null;
-      if (!el) return;
-      el.onclick = () => {
-        const id = el.getAttribute("data-pod");
-        router.push(`/dashboard?pod=${id ?? ""}`);
-      };
+      const popupElement = (e.popup.getElement() as HTMLElement | null);
+      if (!popupElement) return;
+      
+      const button = popupElement.querySelector(".pod-action") as HTMLButtonElement | null;
+      if (!button) return;
+      
+      // Remove any existing listeners to prevent duplicates
+      button.replaceWith(button.cloneNode(true));
+      const newButton = popupElement.querySelector(".pod-action") as HTMLButtonElement | null;
+      
+      if (newButton) {
+        newButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const id = newButton.getAttribute("data-pod");
+          // Use full navigation here to avoid intermittent client-transition blank screens.
+          window.location.href = `/dashboard?pod=${id ?? ""}`;
+        });
+      }
     });
 
     return () => {
@@ -297,7 +348,7 @@ export default function NetworkMap() {
       map.off("zoomend", updateLayerByZoom);
       map.remove();
     };
-  }, [router]);
+  }, []);
 
   return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 }

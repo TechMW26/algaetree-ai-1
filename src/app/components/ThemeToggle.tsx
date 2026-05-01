@@ -9,20 +9,26 @@ function readTheme(): Theme {
   return (document.documentElement.getAttribute("data-theme") as Theme) || "light";
 }
 
+function getISTAutoTheme(): "light" | "dark" {
+  const nowMs = Date.now() + (330 + new Date().getTimezoneOffset()) * 60_000;
+  const h = new Date(nowMs).getHours();
+  return h >= 6 && h < 18 ? "light" : "dark";
+}
+
 export default function ThemeToggle({ size = 36 }: { size?: number }) {
   const [theme, setTheme] = useState<Theme>("light");
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     setTheme(readTheme());
   }, []);
 
   const toggle = () => {
-    const next: Theme = theme === "light" ? "dark" : "light";
-    setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
-    try {
-      localStorage.setItem("theme", next);
-    } catch {}
+    // Re-apply auto theme instead of toggling
+    const auto = getISTAutoTheme();
+    setTheme(auto);
+    document.documentElement.setAttribute("data-theme", auto);
   };
 
   const isLight = theme === "light";

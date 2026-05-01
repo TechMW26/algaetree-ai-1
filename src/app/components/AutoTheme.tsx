@@ -3,33 +3,27 @@
 import { useEffect } from "react";
 
 function getISTAutoTheme(): "light" | "dark" {
-  // IST = UTC+5:30
+  // IST = UTC+5:30 = 330 minutes ahead
   const nowMs = Date.now() + (330 + new Date().getTimezoneOffset()) * 60_000;
   const h = new Date(nowMs).getHours();
-  return h >= 18 || h < 5 ? "dark" : "light";
+  // Light theme: 6 AM - 6 PM (06:00-17:59), Dark theme: 6 PM - 6 AM (18:00-05:59)
+  return h >= 6 && h < 18 ? "light" : "dark";
 }
 
 export default function AutoTheme() {
   useEffect(() => {
-    const tick = () => {
+    const enforceTheme = () => {
       const auto = getISTAutoTheme();
-      let lastAuto: string | null = null;
+      // Always apply the current time-based theme, no override
+      document.documentElement.setAttribute("data-theme", auto);
       try {
-        lastAuto = localStorage.getItem("themeAuto");
+        localStorage.setItem("themeAuto", auto);
       } catch {}
-
-      // Boundary crossed → reset theme to the new auto value, clearing any manual override.
-      if (lastAuto !== auto) {
-        document.documentElement.setAttribute("data-theme", auto);
-        try {
-          localStorage.setItem("themeAuto", auto);
-          localStorage.setItem("theme", auto);
-        } catch {}
-      }
     };
 
-    tick();
-    const id = setInterval(tick, 60_000);
+    enforceTheme();
+    // Check every minute for time boundary crossing
+    const id = setInterval(enforceTheme, 60_000);
     return () => clearInterval(id);
   }, []);
 

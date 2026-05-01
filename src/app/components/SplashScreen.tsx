@@ -60,7 +60,7 @@ export default function SplashScreen() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: "1em",
+        gap: "0.5em",
         opacity: fading ? 0 : 1,
         transition: `opacity ${FADE_DURATION_MS}ms ease`,
         pointerEvents: fading ? "none" : "auto",
@@ -81,10 +81,9 @@ export default function SplashScreen() {
           fontFamily:
             "var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
           fontSize: "clamp(11px, 1.6vw, 14px)",
-          letterSpacing: "0.22em",
-          textTransform: "uppercase",
+          letterSpacing: "0.05em",
           color: "#6b7280",
-          fontWeight: 500,
+          fontWeight: 400,
           userSelect: "none",
           opacity: 0,
           animation: "splashLabelIn 700ms cubic-bezier(0.22, 1, 0.36, 1) 100ms forwards",
@@ -102,6 +101,8 @@ export default function SplashScreen() {
           userSelect: "none",
           opacity: 0,
           animation: "splashLogoIn 1000ms cubic-bezier(0.22, 1, 0.36, 1) 800ms forwards",
+          display: "block",
+          margin: "0 auto",
         }}
         draggable={false}
       />

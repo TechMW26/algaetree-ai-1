@@ -3,9 +3,10 @@
 import { Suspense, useState, useEffect, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useLiveData } from "../hooks/useLiveData";
 import ThemeToggle from "../components/ThemeToggle";
+import DashboardPasswordGate from "../components/DashboardPasswordGate";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -275,6 +276,9 @@ function DashboardPageContent() {
     Motor4Volume: 0,
     Motor5Volume: 0,
   });
+  const masterLedValue = Math.round(
+    (ledDraft.LED1 + ledDraft.LED2 + ledDraft.LED3 + ledDraft.LED4) / 4
+  );
 
   useEffect(() => {
     setLedDraft(d.ledIntensity);
@@ -539,19 +543,22 @@ function DashboardPageContent() {
       </motion.div>
 
       {/* ────── BENTO GRID ────── */}
-      <motion.main
-        className="relative z-10 flex-1 grid overflow-hidden dash-grid"
-        style={{
-          padding: "20px 24px",
-          gap: 18,
-          gridTemplateColumns: activeTab === 0 ? "1.1fr 1fr 1fr" : "1fr 1fr 1fr",
-          gridTemplateRows: activeTab === 0 ? "1fr 1fr auto" : "1fr 1fr auto",
-        }}
-        variants={stagger}
-        initial="hidden"
-        animate="show"
-        key={`${activeTab}-${d.activeTreeId}`}
-      >
+      <AnimatePresence mode="wait">
+        <motion.main
+          className="relative z-10 flex-1 grid overflow-hidden dash-grid"
+          style={{
+            padding: "20px 24px",
+            gap: 18,
+            gridTemplateColumns: activeTab === 0 ? "1.1fr 1fr 1fr" : "1fr 1fr 1fr",
+            gridTemplateRows: activeTab === 0 ? "1fr 1fr auto" : "1fr 1fr auto",
+          }}
+          variants={stagger}
+          initial="hidden"
+          animate="show"
+          exit="hidden"
+          transition={{ duration: 0.4 }}
+          key={`${activeTab}-${d.activeTreeId}`}
+        >
 
         {/* ═══════════ TAB 0 — BIO-REACTOR ═══════════ */}
         {activeTab === 0 && (
@@ -994,6 +1001,26 @@ function DashboardPageContent() {
                   </div>
                 ))}
               </div>
+
+              <div className="rounded-2xl" style={{ marginTop: 12, padding: 12, border: "1px solid rgba(148,163,184,0.22)", background: "linear-gradient(150deg, rgba(2,132,199,0.08), rgba(2,6,23,0.1))" }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                  <p style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700, color: "#38bdf8" }}>LDR Sensor Matrix</p>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)" }}>Live</span>
+                </div>
+                <div className="grid grid-cols-4" style={{ gap: 8 }}>
+                  {([
+                    { k: "LDR1", v: d.ldrStatus.LDR1 },
+                    { k: "LDR2", v: d.ldrStatus.LDR2 },
+                    { k: "LDR3", v: d.ldrStatus.LDR3 },
+                    { k: "LDR4", v: d.ldrStatus.LDR4 },
+                  ] as const).map((ldr) => (
+                    <div key={ldr.k} className="rounded-xl" style={{ padding: "9px 10px", border: "1px solid rgba(148,163,184,0.22)", background: "rgba(15,23,42,0.12)", textAlign: "center" }}>
+                      <p style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 700 }}>{ldr.k}</p>
+                      <p style={{ fontSize: 12, fontWeight: 800, color: ldr.v ? "#22c55e" : "#94a3b8", letterSpacing: "0.04em" }}>{ldr.v ? "LIGHT" : "DARK"}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </motion.div>
 
             {/* Device Control (single large card) */}
@@ -1003,6 +1030,7 @@ function DashboardPageContent() {
                 padding: 28,
                 gridColumn: "2 / 4",
                 gridRow: "1 / 3",
+                minHeight: 0,
                 position: "relative",
                 background: "linear-gradient(145deg, rgba(14,165,233,0.06), var(--surface), rgba(34,197,94,0.05))",
                 ['--card-tint' as React.CSSProperties & string]: 'rgba(56,189,248,0.12)',
@@ -1056,6 +1084,8 @@ function DashboardPageContent() {
                 <span style={{ fontSize: 11, color: "var(--text-3)", fontWeight: 700 }}>{controlBusy ? "SYNCING..." : "LIVE"}</span>
               </div>
 
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
+
               <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
                 <ToggleChip label="Air Bubbles" enabled={uiOperations.AirBubbles} busy={controlBusy} onToggle={() => { void toggleOperation("AirBubbles"); }} />
                 <ToggleChip label="Fan" enabled={uiOperations.Fan} busy={controlBusy} onToggle={() => { void toggleOperation("Fan"); }} />
@@ -1084,6 +1114,18 @@ function DashboardPageContent() {
               </div>
 
               <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>LED Intensity Control</p>
+              <div style={{ marginBottom: 10 }}>
+                <IntensitySlider
+                  label="Master LED"
+                  value={masterLedValue}
+                  onChange={(v) => {
+                    setLedDraft({ LED1: v, LED2: v, LED3: v, LED4: v });
+                  }}
+                  onCommit={() => {
+                    void commitIntensity();
+                  }}
+                />
+              </div>
               <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
                 <IntensitySlider label="LED1" value={ledDraft.LED1} onChange={(v) => setLedDraft((p) => ({ ...p, LED1: v }))} onCommit={() => { void commitIntensity(); }} />
                 <IntensitySlider label="LED2" value={ledDraft.LED2} onChange={(v) => setLedDraft((p) => ({ ...p, LED2: v }))} onCommit={() => { void commitIntensity(); }} />
@@ -1124,18 +1166,6 @@ function DashboardPageContent() {
                 ))}
               </div>
 
-              <div className="grid grid-cols-4" style={{ gap: 8 }}>
-                {([
-                  { k: "LDR1", v: d.ldrStatus.LDR1 },
-                  { k: "LDR2", v: d.ldrStatus.LDR2 },
-                  { k: "LDR3", v: d.ldrStatus.LDR3 },
-                  { k: "LDR4", v: d.ldrStatus.LDR4 },
-                ] as const).map((ldr) => (
-                  <div key={ldr.k} className="rounded-xl" style={{ padding: "8px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)", textAlign: "center" }}>
-                    <p style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 700 }}>{ldr.k}</p>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: ldr.v ? "#22c55e" : "#94a3b8" }}>{ldr.v ? "LIGHT" : "DARK"}</p>
-                  </div>
-                ))}
               </div>
 
             </motion.div>
@@ -1185,14 +1215,20 @@ function DashboardPageContent() {
           ))}
         </motion.footer>
       </motion.main>
+      </AnimatePresence>
     </div>
   );
 }
 
 export default function DashboardPage() {
+  const password = process.env.NEXT_PUBLIC_DASHBOARD_PASSWORD || "7500";
   return (
-    <Suspense fallback={null}>
-      <DashboardPageContent />
+    <Suspense fallback={<div style={{ width: "100%", height: "100vh", background: "var(--bg)" }} />}>
+      <DashboardPasswordGate correctPassword={password}>
+        <Suspense fallback={null}>
+          <DashboardPageContent />
+        </Suspense>
+      </DashboardPasswordGate>
     </Suspense>
   );
 }

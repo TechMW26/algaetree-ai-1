@@ -47,7 +47,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var nowIST=new Date(Date.now()+(330+new Date().getTimezoneOffset())*60000);var h=nowIST.getHours();var auto=(h>=18||h<5)?'dark':'light';var stored=localStorage.getItem('theme');var lastAuto=localStorage.getItem('themeAuto');var t=auto;if(stored&&lastAuto===auto){t=stored;}localStorage.setItem('themeAuto',auto);document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`,
+            __html: `(function(){try{var nowIST=new Date(Date.now()+(330+new Date().getTimezoneOffset())*60000);var h=nowIST.getHours();var auto=(h>=6&&h<18)?'light':'dark';localStorage.setItem('themeAuto',auto);document.documentElement.setAttribute('data-theme',auto);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`,
           }}
         />
       </head>

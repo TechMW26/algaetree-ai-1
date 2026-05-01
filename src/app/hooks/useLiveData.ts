@@ -436,38 +436,127 @@ export function useLiveData(treeId: string = DEFAULT_TREE_ID): LiveData {
     if (!baseUrl) return;
 
     let cancelled = false;
+    let stream: EventSource | null = null;
+    const normalizedBase = baseUrl.replace(/\/$/, "");
+    let algeeTreeCache: Record<string, DbTree | number | undefined> = {};
 
-    const load = async () => {
+    const setFromAlgeeTree = (root: Record<string, DbTree | number | undefined>) => {
+      const noOfDevices = toNum((root.NoOfDevices as number | undefined), 0);
+      const requestedTree = root[treeId] as DbTree | undefined;
+      const fallbackTree = root[DEFAULT_TREE_ID] as DbTree | undefined;
+      const anyTree = Object.entries(root).find(([k]) => k !== "NoOfDevices")?.[1] as DbTree | undefined;
+      const selectedTree = requestedTree ?? fallbackTree ?? anyTree;
+      const selectedTreeId = requestedTree
+        ? treeId
+        : fallbackTree
+          ? DEFAULT_TREE_ID
+          : (selectedTree?.DeviceID ?? DEFAULT_TREE_ID);
+
+      if (!selectedTree || cancelled) return;
+      setD(mapTreeToLiveData(selectedTreeId, selectedTree, noOfDevices));
+    };
+
+    const applyPathUpdate = (path: string, data: unknown, mergeObject: boolean) => {
+      const parts = path.split("/").filter(Boolean);
+      if (parts.length === 0) {
+        if (data && typeof data === "object") {
+          algeeTreeCache = data as Record<string, DbTree | number | undefined>;
+          setFromAlgeeTree(algeeTreeCache);
+        }
+        return;
+      }
+
+      let cursor = algeeTreeCache as Record<string, unknown>;
+      for (let i = 0; i < parts.length - 1; i += 1) {
+        const key = parts[i];
+        const current = cursor[key];
+        if (!current || typeof current !== "object") {
+          cursor[key] = {};
+        }
+        cursor = cursor[key] as Record<string, unknown>;
+      }
+
+      const leaf = parts[parts.length - 1];
+      if (
+        mergeObject &&
+        data &&
+        typeof data === "object" &&
+        cursor[leaf] &&
+        typeof cursor[leaf] === "object"
+      ) {
+        cursor[leaf] = {
+          ...(cursor[leaf] as Record<string, unknown>),
+          ...(data as Record<string, unknown>),
+        };
+      } else {
+        cursor[leaf] = data as unknown;
+      }
+
+      setFromAlgeeTree(algeeTreeCache);
+    };
+
+    const loadSnapshot = async () => {
       try {
-        const res = await fetch(`${baseUrl.replace(/\/$/, "")}/.json`, { cache: "no-store" });
+        const res = await fetch(`${normalizedBase}/AlgeeTree.json`, { cache: "no-store" });
         if (!res.ok) return;
-        const json = (await res.json()) as DbRoot;
-        const root = json.AlgeeTree ?? {};
-
-        const noOfDevices = toNum((root.NoOfDevices as number | undefined), 0);
-        const requestedTree = root[treeId] as DbTree | undefined;
-        const fallbackTree = root[DEFAULT_TREE_ID] as DbTree | undefined;
-        const anyTree = Object.entries(root).find(([k]) => k !== "NoOfDevices")?.[1] as DbTree | undefined;
-        const selectedTree = requestedTree ?? fallbackTree ?? anyTree;
-        const selectedTreeId = requestedTree
-          ? treeId
-          : fallbackTree
-            ? DEFAULT_TREE_ID
-            : (selectedTree?.DeviceID ?? DEFAULT_TREE_ID);
-
-        if (!selectedTree || cancelled) return;
-        setD(mapTreeToLiveData(selectedTreeId, selectedTree, noOfDevices));
+        const json = (await res.json()) as Record<string, DbTree | number | undefined>;
+        if (!json || cancelled) return;
+        algeeTreeCache = json;
+        setFromAlgeeTree(algeeTreeCache);
       } catch {
-        // Keep last successful snapshot on network/API errors.
+        // Keep last successful snapshot on transient fetch errors.
       }
     };
 
-    void load();
-    const id = setInterval(() => {
-      void load();
-    }, 8000);
+    const handleStreamEvent = (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data) as { path?: string; data?: unknown };
+        const path = payload.path ?? "/";
+        const data = payload.data;
+        const isPatch = (event.type ?? "").toLowerCase() === "patch";
 
-    return () => clearInterval(id);
+        if (path === "/") {
+          if (data && typeof data === "object") {
+            if (isPatch) {
+              algeeTreeCache = {
+                ...algeeTreeCache,
+                ...(data as Record<string, DbTree | number | undefined>),
+              };
+            } else {
+              algeeTreeCache = data as Record<string, DbTree | number | undefined>;
+            }
+            setFromAlgeeTree(algeeTreeCache);
+          }
+          return;
+        }
+
+        applyPathUpdate(path, data, isPatch);
+      } catch {
+        // Ignore malformed stream events.
+      }
+    };
+
+    void loadSnapshot();
+
+    if (typeof EventSource !== "undefined") {
+      stream = new EventSource(`${normalizedBase}/AlgeeTree.json`);
+      stream.addEventListener("put", handleStreamEvent as EventListener);
+      stream.addEventListener("patch", handleStreamEvent as EventListener);
+      stream.onerror = () => {
+        // Keep current data if stream drops; periodic fallback refresh below will recover.
+      };
+    }
+
+    // Safety refresh in case the stream disconnects silently.
+    const id = setInterval(() => {
+      void loadSnapshot();
+    }, 30000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      stream?.close();
+    };
   }, [treeId]);
 
   return d;

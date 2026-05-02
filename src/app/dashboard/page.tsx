@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, type ReactNode } from "react";
+import { Suspense, useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
@@ -18,6 +18,13 @@ const rise = {
 
 const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
 const clampPercent = (value: number) => Math.min(Math.max(value, 0), 100);
+const clampNumber = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+type ControlPanelTab =
+  | "flow"
+  | "lighting"
+  | "algae"
+  | "settings";
 
 // Dashboard ranges are tuned for operational readability rather than raw sensor ceilings.
 const GAUGE_RANGES = {
@@ -350,24 +357,29 @@ function ToggleChip({
         alignItems: "center",
         justifyContent: "space-between",
         width: "100%",
-        border: `1px solid ${enabled ? "rgba(34,197,94,0.5)" : "var(--border)"}`,
+        border: `1px solid ${enabled ? "rgba(34,197,94,0.42)" : "rgba(239,68,68,0.32)"}`,
         background: enabled
-          ? "linear-gradient(140deg, rgba(34,197,94,0.14), rgba(34,197,94,0.04))"
-          : "linear-gradient(140deg, var(--surface), var(--mini-bg))",
+          ? "linear-gradient(145deg, rgba(34,197,94,0.15), rgba(16,185,129,0.04))"
+          : "linear-gradient(145deg, rgba(239,68,68,0.12), rgba(248,113,113,0.04))",
         borderRadius: 14,
-        padding: "11px 12px",
+        padding: "10px 12px",
         opacity: busy ? 0.7 : 1,
-        boxShadow: enabled ? "0 6px 20px rgba(34,197,94,0.12)" : "none",
+        boxShadow: enabled ? "0 8px 20px rgba(34,197,94,0.14)" : "0 8px 20px rgba(239,68,68,0.1)",
         transition: "all .2s ease",
       }}
     >
-      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)" }}>{label}</span>
+      <div className="flex items-center" style={{ gap: 8 }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: enabled ? "#22c55e" : "#ef4444", boxShadow: enabled ? "0 0 12px rgba(34,197,94,0.65)" : "0 0 10px rgba(239,68,68,0.5)" }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-2)", letterSpacing: "0.01em" }}>{label}</span>
+      </div>
       <span
         style={{
-          width: 34,
-          height: 20,
+          width: 38,
+          height: 22,
           borderRadius: 999,
-          background: enabled ? "linear-gradient(135deg, #16a34a, #22c55e)" : "var(--track)",
+          background: enabled
+            ? "linear-gradient(135deg, #16a34a, #22c55e)"
+            : "linear-gradient(135deg, #ef4444, #f87171)",
           position: "relative",
           transition: "all .2s ease",
         }}
@@ -377,8 +389,8 @@ function ToggleChip({
             position: "absolute",
             top: 2,
             left: enabled ? 18 : 2,
-            width: 16,
-            height: 16,
+            width: 18,
+            height: 18,
             borderRadius: "50%",
             background: "#fff",
             transition: "all .2s ease",
@@ -389,33 +401,226 @@ function ToggleChip({
   );
 }
 
-function IntensitySlider({
+function RoundKnob({
   label,
   value,
+  min,
+  max,
+  step = 1,
+  unit = "",
+  accent = "#22c55e",
+  glowStrength = 0,
+  glowColor = "#22c55e",
+  variant = "large",
+  busy,
   onChange,
   onCommit,
 }: {
   label: string;
   value: number;
+  min: number;
+  max: number;
+  step?: number;
+  unit?: string;
+  accent?: string;
+  glowStrength?: number;
+  glowColor?: string;
+  variant?: "small" | "large";
+  busy?: boolean;
   onChange: (v: number) => void;
   onCommit: () => void;
 }) {
+  const isSmall = variant === "small";
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [cardWidth, setCardWidth] = useState(0);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      if (w > 0) setCardWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // knobSize fills ~65% of the card width, clamped to sensible min/max
+  const knobSize = cardWidth > 0
+    ? Math.max(isSmall ? 80 : 110, Math.min(isSmall ? 160 : 220, Math.floor(cardWidth * 0.65)))
+    : (isSmall ? 100 : 140);
+
+  const fullAngle  = 270;
+  const startAngle = (360 - fullAngle) / 2;   // 45°
+  const endAngle   = startAngle + fullAngle;   // 315°
+  const numTicks   = isSmall ? 24 : 32;
+  const tickLen    = Math.max(8, Math.round(knobSize * 0.09));
+  const tickInner  = knobSize / 2 + Math.round(knobSize * 0.05);
+  const tickOuter  = tickInner + tickLen;
+  const totalSize  = Math.ceil(tickOuter * 2 + 8);
+
+  const currentDeg = Math.floor(
+    ((value - min) * (endAngle - startAngle)) / Math.max(1, max - min) + startAngle,
+  );
+
+  const applyValue = (next: number) => {
+    const snapped = Math.round(next / step) * step;
+    onChange(clampNumber(snapped, min, max));
+  };
+
+  const getDeg = (cX: number, cY: number, pts: { x: number; y: number }) => {
+    const x = cX - pts.x;
+    const y = cY - pts.y;
+    let deg = (Math.atan(y / (x || Number.EPSILON)) * 180) / Math.PI;
+    if ((x < 0 && y >= 0) || (x < 0 && y < 0)) deg += 90;
+    else deg += 270;
+    return Math.min(Math.max(startAngle, deg), endAngle);
+  };
+
+  const startDrag = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (busy) return;
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pts  = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+
+    const moveHandler = (ev: MouseEvent) => {
+      const deg      = getDeg(ev.clientX, ev.clientY, pts);
+      const nextValue = Math.floor(((deg - startAngle) * (max - min)) / (endAngle - startAngle) + min);
+      applyValue(nextValue);
+    };
+    const upHandler = () => {
+      document.removeEventListener("mousemove", moveHandler);
+      document.removeEventListener("mouseup", upHandler);
+      onCommit();
+    };
+    document.addEventListener("mousemove", moveHandler);
+    document.addEventListener("mouseup", upHandler);
+  };
+
+  // Build tick positions using SVG-style polar math so they perfectly circle the knob.
+  const ticks = useMemo<Array<{ active: boolean; cx: number; cy: number; deg: number }>>(() => {
+    const cx = totalSize / 2;
+    const cy = totalSize / 2;
+    return Array.from({ length: numTicks + 1 }, (_, i) => {
+      const deg    = startAngle + (i / numTicks) * fullAngle;
+      const active = deg <= currentDeg;
+      return { active, cx, cy, deg };
+    });
+  }, [totalSize, numTicks, startAngle, fullAngle, currentDeg]);
+
+  const cx = totalSize / 2;
+  const cy = totalSize / 2;
+
   return (
-    <div className="rounded-xl" style={{ padding: "10px 12px", background: "linear-gradient(145deg, var(--mini-bg), var(--surface))", border: "1px solid var(--border)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.2)" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-2)" }}>{label}</span>
-        <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>{value}</span>
+    <div ref={cardRef} className="rounded-xl" style={{ padding: "10px 12px", background: "linear-gradient(150deg, rgba(15,23,42,0.08), rgba(255,255,255,0.06)), var(--surface)", border: "1px solid var(--border)", boxShadow: "0 10px 24px rgba(2,6,23,0.14), inset 0 1px 0 rgba(255,255,255,0.22)", position: "relative" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: "var(--text-2)", letterSpacing: "0.02em" }}>{label}</span>
+        <span style={{ fontSize: 10, color: accent, fontWeight: 800 }}>{value}{unit ? ` ${unit}` : ""}</span>
       </div>
-      <input
-        type="range"
-        min={0}
-        max={255}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        onMouseUp={() => setTimeout(onCommit, 250)}
-        onTouchEnd={() => setTimeout(onCommit, 250)}
-        style={{ width: "100%", accentColor: "#22c55e" }}
-      />
+
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
+        {/* SVG tick ring */}
+        <div style={{ position: "relative", width: totalSize, height: totalSize, flexShrink: 0 }}>
+          <svg
+            width={totalSize}
+            height={totalSize}
+            style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+          >
+            {ticks.map((tick, i) => {
+              // CSS rotate(θ) on a downward tick: tip = (cx - r·sinθ, cy + r·cosθ)
+              // startAngle=45° → lower-left (7 o'clock, min), endAngle=315° → lower-right (5 o'clock, max)
+              // Sweep is clockwise from lower-left through top to lower-right.
+              const rad    = (tick.deg * Math.PI) / 180;
+              const x1     = cx - tickInner * Math.sin(rad);
+              const y1     = cy + tickInner * Math.cos(rad);
+              const x2     = cx - tickOuter * Math.sin(rad);
+              const y2     = cy + tickOuter * Math.cos(rad);
+              return (
+                <line
+                  key={`${label}-tick-${i}`}
+                  x1={x1} y1={y1} x2={x2} y2={y2}
+                  stroke={tick.active ? accent : "rgba(30,40,60,0.55)"}
+                  strokeWidth={tick.active ? 2.5 : 2}
+                  strokeLinecap="round"
+                  style={{ filter: tick.active ? `drop-shadow(0 0 3px ${accent})` : "none", transition: "stroke 0.1s ease" }}
+                />
+              );
+            })}
+          </svg>
+
+          {/* Metallic knob disk, centered in the wrapper */}
+          <div
+            onMouseDown={startDrag}
+            style={{
+              position: "absolute",
+              left: cx - knobSize / 2,
+              top:  cy - knobSize / 2,
+              width: knobSize,
+              height: knobSize,
+              borderRadius: "50%",
+              border: "1px solid #222",
+              borderBottom: "5px solid #222",
+              backgroundImage: "radial-gradient(100% 70%, #666 6%, #333 90%)",
+              boxShadow:
+                (isSmall ? `0 0 ${Math.round(24 * clamp01(glowStrength))}px ${glowColor}, ` : "") +
+                "0 5px 15px 2px black, 0 0 5px 3px black, 0 0 0 8px #444",
+              cursor: busy ? "not-allowed" : "grab",
+              opacity: busy ? 0.72 : 1,
+              overflow: "hidden",
+            }}
+          >
+            {/* Spinning metallic inner cap — grip dot is INSIDE so it rotates with the knob */}
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: "50%",
+                background: "repeating-conic-gradient(#868d99 0%, #d9dee5 14%, #9ea6b2 32%, #eef2f7 42%, #949cab 50%)",
+                boxShadow: "inset 0 5px 10px rgba(255,255,255,0.45), inset 0 -12px 18px rgba(2,6,23,0.2)",
+                transform: `rotate(${currentDeg}deg)`,
+              }}
+            >
+              {/* Grip dot — child of rotating div so it moves with the knob */}
+              <div
+                style={{
+                  position: "absolute",
+                  width: "7%",
+                  height: "7%",
+                  bottom: "3%",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  borderRadius: "50%",
+                  background: accent,
+                  boxShadow: `0 0 8px 1px ${accent}`,
+                }}
+              />
+            </div>
+            {/* Readout */}
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "grid",
+                placeItems: "center",
+                pointerEvents: "none",
+                fontWeight: 800,
+                color: "#e2e8f0",
+                textShadow: "0 1px 6px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,1)",
+                fontSize: isSmall ? 20 : 28,
+                zIndex: 3,
+              }}
+            >
+              <div style={{ textAlign: "center", lineHeight: 1 }}>
+                {value}
+                {unit ? (
+                  <small style={{ display: "block", textAlign: "center", opacity: 0.85, fontSize: 10, marginTop: 2, fontWeight: 700, color: "#cbd5e1" }}>
+                    {unit}
+                  </small>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -459,8 +664,18 @@ function DashboardPageContent() {
   const [navigating, setNavigating] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [dashboardScale, setDashboardScale] = useState(1);
+  const [explorerCycleIndex, setExplorerCycleIndex] = useState(0);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
-  const controlBusy = pendingSyncCount > 0;
+  const [cooldownLeftSec, setCooldownLeftSec] = useState(0);
+  const [controlPanelTab, setControlPanelTab] = useState<ControlPanelTab>("flow");
+  const lastOperationAtRef = useRef(0);
+  const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const dialBootTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasBootstrappedDialStateRef = useRef(false);
+  const dialBootStartedAtRef = useRef(Date.now());
+  const isCooldownActive = cooldownLeftSec > 0;
+  const controlBusy = pendingSyncCount > 0 || isCooldownActive;
   const [uiOperations, setUiOperations] = useState(d.operations);
   const [uiAirBubblesTiming, setUiAirBubblesTiming] = useState(d.airBubblesTiming);
   const [ledDraft, setLedDraft] = useState({ LED1: 0, LED2: 0, LED3: 0, LED4: 0 });
@@ -472,21 +687,15 @@ function DashboardPageContent() {
     Motor5Volume: 0,
   });
   const operationChangeCodes: Record<keyof typeof uiOperations, number> = {
-    AirBubbles: 16,
-    Drain: 14,
-    Fan: 17,
-    Filling: 15,
-    SolarCleaning: 22,
+    AirBubbles: 15,
+    Drain: 13,
+    Fan: 16,
+    Filling: 14,
+    SolarCleaning: 20,
     LED1: 18,
     LED2: 19,
-    LED3: 20,
-    LED4: 21,
-  };
-  const ledIntensityChangeCodes: Record<keyof typeof ledDraft, number> = {
-    LED1: 10,
-    LED2: 11,
-    LED3: 12,
-    LED4: 13,
+    LED3: 19,
+    LED4: 19,
   };
   const masterLedValue = Math.round(
     (ledDraft.LED1 + ledDraft.LED2 + ledDraft.LED3 + ledDraft.LED4) / 4
@@ -496,10 +705,106 @@ function DashboardPageContent() {
   const weeklyGrowthPct = previousWeeklyBiomass > 0
     ? +(((latestWeeklyBiomass - previousWeeklyBiomass) / previousWeeklyBiomass) * 100).toFixed(1)
     : 0;
+  const specificErrors: string[] = [];
+  if (d.error) {
+    if (d.operations.LED1 && !d.ldrStatus.LDR1) specificErrors.push("LED1");
+    if (d.operations.LED2 && !d.ldrStatus.LDR2) specificErrors.push("LED2");
+    if (d.operations.LED3 && !d.ldrStatus.LDR3) specificErrors.push("LED3");
+    if (d.operations.LED4 && !d.ldrStatus.LDR4) specificErrors.push("LED4");
+  }
 
   useEffect(() => {
-    setLedDraft(d.ledIntensity);
-  }, [d.ledIntensity.LED1, d.ledIntensity.LED2, d.ledIntensity.LED3, d.ledIntensity.LED4]);
+    const ledTarget = d.ledIntensity;
+    const nutritionTarget = d.nutritionDosing;
+    const bubbleTarget = d.airBubblesTiming;
+
+    const stopDialBootRamp = () => {
+      if (!dialBootTimerRef.current) return;
+      clearInterval(dialBootTimerRef.current);
+      dialBootTimerRef.current = null;
+    };
+
+    if (!hasBootstrappedDialStateRef.current) {
+      const elapsed = Date.now() - dialBootStartedAtRef.current;
+      const hasNonZeroTarget =
+        ledTarget.LED1 > 0 ||
+        ledTarget.LED2 > 0 ||
+        ledTarget.LED3 > 0 ||
+        ledTarget.LED4 > 0 ||
+        nutritionTarget.Motor1Volume > 0 ||
+        nutritionTarget.Motor2Volume > 0 ||
+        nutritionTarget.Motor3Volume > 0 ||
+        nutritionTarget.Motor4Volume > 0 ||
+        nutritionTarget.Motor5Volume > 0 ||
+        bubbleTarget.on > 0 ||
+        bubbleTarget.off > 0;
+
+      // Wait briefly at startup so we can animate to the first fetched DB snapshot
+      // instead of immediately locking in all-zero defaults.
+      if (!hasNonZeroTarget && elapsed < 1500) {
+        return;
+      }
+
+      if (hasNonZeroTarget) {
+        stopDialBootRamp();
+        let tick = 0;
+        const totalTicks = 18;
+        const lerpRounded = (target: number) => Math.round((target * tick) / totalTicks);
+
+        dialBootTimerRef.current = setInterval(() => {
+          tick += 1;
+          setLedDraft({
+            LED1: lerpRounded(ledTarget.LED1),
+            LED2: lerpRounded(ledTarget.LED2),
+            LED3: lerpRounded(ledTarget.LED3),
+            LED4: lerpRounded(ledTarget.LED4),
+          });
+          setNutritionDraft({
+            Motor1Volume: lerpRounded(nutritionTarget.Motor1Volume),
+            Motor2Volume: lerpRounded(nutritionTarget.Motor2Volume),
+            Motor3Volume: lerpRounded(nutritionTarget.Motor3Volume),
+            Motor4Volume: lerpRounded(nutritionTarget.Motor4Volume),
+            Motor5Volume: lerpRounded(nutritionTarget.Motor5Volume),
+          });
+          setUiAirBubblesTiming({
+            on: Math.max(0, lerpRounded(bubbleTarget.on)),
+            off: Math.max(0, lerpRounded(bubbleTarget.off)),
+          });
+
+          if (tick >= totalTicks) {
+            stopDialBootRamp();
+            setLedDraft(ledTarget);
+            setNutritionDraft(nutritionTarget);
+            setUiAirBubblesTiming(bubbleTarget);
+            hasBootstrappedDialStateRef.current = true;
+          }
+        }, 28);
+      } else {
+        setLedDraft(ledTarget);
+        setNutritionDraft(nutritionTarget);
+        setUiAirBubblesTiming(bubbleTarget);
+        hasBootstrappedDialStateRef.current = true;
+      }
+
+      return;
+    }
+
+    setLedDraft(ledTarget);
+    setNutritionDraft(nutritionTarget);
+    setUiAirBubblesTiming(bubbleTarget);
+  }, [
+    d.ledIntensity.LED1,
+    d.ledIntensity.LED2,
+    d.ledIntensity.LED3,
+    d.ledIntensity.LED4,
+    d.nutritionDosing.Motor1Volume,
+    d.nutritionDosing.Motor2Volume,
+    d.nutritionDosing.Motor3Volume,
+    d.nutritionDosing.Motor4Volume,
+    d.nutritionDosing.Motor5Volume,
+    d.airBubblesTiming.on,
+    d.airBubblesTiming.off,
+  ]);
 
   useEffect(() => {
     setUiOperations(d.operations);
@@ -516,18 +821,67 @@ function DashboardPageContent() {
   ]);
 
   useEffect(() => {
-    setUiAirBubblesTiming(d.airBubblesTiming);
-  }, [d.airBubblesTiming.on, d.airBubblesTiming.off]);
+    return () => {
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+        cooldownTimerRef.current = null;
+      }
+      if (dialBootTimerRef.current) {
+        clearInterval(dialBootTimerRef.current);
+        dialBootTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
-    setNutritionDraft(d.nutritionDosing);
-  }, [
-    d.nutritionDosing.Motor1Volume,
-    d.nutritionDosing.Motor2Volume,
-    d.nutritionDosing.Motor3Volume,
-    d.nutritionDosing.Motor4Volume,
-    d.nutritionDosing.Motor5Volume,
-  ]);
+    const BASE_WIDTH = 1760;
+    const BASE_HEIGHT = 900;
+
+    const updateScale = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+
+      // Keep mobile layout behavior untouched.
+      if (w <= 768) {
+        setDashboardScale(1);
+        return;
+      }
+
+      const scale = Math.min(w / BASE_WIDTH, h / BASE_HEIGHT, 1);
+      setDashboardScale(Math.max(0.6, scale));
+    };
+
+    updateScale();
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
+  }, []);
+
+  useEffect(() => {
+    setExplorerCycleIndex(0);
+  }, [d.activeTreeId]);
+
+  const showCooldownPopup = (remainingMs: number) => {
+    const initialSec = Math.max(1, Math.ceil(remainingMs / 1000));
+    setCooldownLeftSec(initialSec);
+
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+      cooldownTimerRef.current = null;
+    }
+
+    cooldownTimerRef.current = setInterval(() => {
+      setCooldownLeftSec((prev) => {
+        if (prev <= 1) {
+          if (cooldownTimerRef.current) {
+            clearInterval(cooldownTimerRef.current);
+            cooldownTimerRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
 
   const patchDevice = async (
     updates: Record<string, unknown>,
@@ -546,22 +900,40 @@ function DashboardPageContent() {
     }
   };
 
-  const encodeChangeValue = (command: number, payload: number) => {
-    const safePayload = Math.max(0, Math.trunc(payload));
-    return Number(`${command}${String(safePayload).padStart(3, "0")}`);
+  const encodeChangeValue = (command: number) => {
+    return command;
   };
 
   const sendChangeCommand = async (
     command: number,
-    payload: number,
+      payload: number,
     extraUpdates?: Record<string, unknown>,
+    options?: { skipCooldown?: boolean },
   ) => {
-    // 1. Write the encoded Change value on its own so it is never shadowed.
-    await patchDevice({ Change: encodeChangeValue(command, payload) }, { manual: true });
-    // 2. Write any accompanying state updates (Operations / Intensity / etc.).
-    if (extraUpdates && Object.keys(extraUpdates).length > 0) {
-      await patchDevice(extraUpdates, { manual: true });
+    const now = Date.now();
+    const isBusyFromDevice = command !== 3 && [3, 4, 5].includes(d.change);
+    if (isBusyFromDevice) return false;
+
+    if (!options?.skipCooldown) {
+      const elapsed = now - lastOperationAtRef.current;
+      if (elapsed < 5000) {
+        showCooldownPopup(5000 - elapsed);
+        return false;
+      }
     }
+
+    lastOperationAtRef.current = now;
+    if (!options?.skipCooldown) {
+      showCooldownPopup(5000);
+    }
+    await patchDevice(
+      {
+        ...(extraUpdates ?? {}),
+          Change: encodeChangeValue(command),
+      },
+      { manual: true },
+    );
+    return true;
   };
 
   const toggleOperation = async (key: keyof typeof d.operations) => {
@@ -571,39 +943,97 @@ function DashboardPageContent() {
       [key]: nextValue,
     };
     setUiOperations(nextOps);
-    await sendChangeCommand(operationChangeCodes[key], nextValue ? 1 : 0, {
+    const sent = await sendChangeCommand(operationChangeCodes[key], nextValue ? 1 : 0, {
       Operations: nextOps,
     });
+    if (!sent) setUiOperations(uiOperations);
   };
 
   const commitIntensity = async (
     nextIntensity: typeof ledDraft,
     targets: (keyof typeof ledDraft)[],
   ) => {
-    for (let i = 0; i < targets.length; i += 1) {
-      const target = targets[i];
-      const isLast = i === targets.length - 1;
-      await sendChangeCommand(
-        ledIntensityChangeCodes[target],
-        nextIntensity[target],
-        isLast ? { Intensity: nextIntensity } : undefined,
+    const intensityPatch = { ...d.ledIntensity };
+    targets.forEach((k) => {
+      intensityPatch[k] = nextIntensity[k];
+    });
+    const sent = await sendChangeCommand(12, 0, { Intensity: intensityPatch });
+    const anySent = sent;
+    if (!anySent) setLedDraft(d.ledIntensity);
+  };
+
+  const waitMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  const commitMasterIntensitySequential = async (masterValue: number) => {
+    const clampedMaster = clampNumber(Math.round(masterValue), 0, 255);
+    const ledKeys = ["LED1", "LED2", "LED3", "LED4"] as const;
+    const nextIntensity = {
+      LED1: clampedMaster,
+      LED2: clampedMaster,
+      LED3: clampedMaster,
+      LED4: clampedMaster,
+    };
+
+    setLedDraft(nextIntensity);
+
+    let sequentialPatch = { ...d.ledIntensity };
+    for (let i = 0; i < ledKeys.length; i += 1) {
+      const key = ledKeys[i];
+      sequentialPatch = {
+        ...sequentialPatch,
+        [key]: clampedMaster,
+      };
+
+      const sent = await sendChangeCommand(
+        12,
+        0,
+        { Intensity: sequentialPatch },
+        { skipCooldown: i > 0 },
       );
+
+      if (!sent) {
+        setLedDraft(d.ledIntensity);
+        return;
+      }
+
+      if (i < ledKeys.length - 1) {
+        await waitMs(120);
+      }
     }
   };
 
-  const commitNutrition = async (motor: keyof typeof nutritionDraft) => {
-    await sendChangeCommand(8, nutritionDraft[motor], {
+  const commitNutrition = async () => {
+    const sent = await sendChangeCommand(8, 0, {
       NutritionDosing: nutritionDraft,
     });
+    if (!sent) setNutritionDraft(d.nutritionDosing);
   };
 
-  const setBubblesTiming = async (key: "on" | "off", value: number) => {
-    const next = {
-      on: key === "on" ? value : uiAirBubblesTiming.on,
-      off: key === "off" ? value : uiAirBubblesTiming.off,
+  const toggleFluidOperation = async (mode: "Filling" | "Drain") => {
+    const nextValue = !uiOperations[mode];
+    const oppositeKey = mode === "Filling" ? "Drain" : "Filling";
+    const nextOps = {
+      ...uiOperations,
+      [mode]: nextValue,
+      [oppositeKey]: nextValue ? false : uiOperations[oppositeKey],
     };
-    setUiAirBubblesTiming(next);
-    await sendChangeCommand(7, key === "on" ? next.on : next.off, {
+    setUiOperations(nextOps);
+    const sent = await sendChangeCommand(operationChangeCodes[mode], nextValue ? 1 : 0, {
+      Operations: nextOps,
+    });
+    if (!sent) setUiOperations(d.operations);
+  };
+
+  const updateBubblesTimingDraft = (key: "on" | "off", value: number) => {
+    setUiAirBubblesTiming((prev) => ({
+      on: key === "on" ? value : prev.on,
+      off: key === "off" ? value : prev.off,
+    }));
+  };
+
+  const commitBubblesTiming = async (key: "on" | "off") => {
+    const next = uiAirBubblesTiming;
+    const sent = await sendChangeCommand(7, key === "on" ? next.on : next.off, {
       Operations: {
         ...uiOperations,
         AirBubblesTiming: {
@@ -612,18 +1042,65 @@ function DashboardPageContent() {
         },
       },
     });
+    if (!sent) setUiAirBubblesTiming(d.airBubblesTiming);
   };
 
-  const tabLabels = ["Bio-Reactor", "Environment", "Performance", "System"] as const;
+  const cycleTotal = d.cycleExplorer.length;
+  const selectedCycle = d.cycleExplorer[explorerCycleIndex];
+  const cycleCanGoOlder = explorerCycleIndex < cycleTotal - 1;
+  const cycleCanGoNewer = explorerCycleIndex > 0;
+  const cycleSensorOrder = ["AQI", "CO2", "PH", "Temprature", "TDS", "ECO2", "TVOC", "LTurbidity", "UTurbidity"] as const;
+  const cycleSensorUnit: Record<(typeof cycleSensorOrder)[number], string> = {
+    AQI: "AQI",
+    CO2: "ppm",
+    PH: "",
+    Temprature: "degC",
+    TDS: "ppm",
+    ECO2: "ppm",
+    TVOC: "ppb",
+    LTurbidity: "NTU",
+    UTurbidity: "NTU",
+  };
+  const cycleSensorLabel: Record<(typeof cycleSensorOrder)[number], string> = {
+    AQI: "AQI",
+    CO2: "CO2",
+    PH: "pH",
+    Temprature: "Temperature",
+    TDS: "TDS",
+    ECO2: "ECO2",
+    TVOC: "TVOC",
+    LTurbidity: "Lower Turbidity",
+    UTurbidity: "Upper Turbidity",
+  };
+
+  const tabLabels = ["Bio-Reactor", "Environment", "Performance", "Cycles", "System"] as const;
+  const controlPanelTabs: { id: ControlPanelTab; label: string }[] = [
+    { id: "flow", label: "Flow Control" },
+    { id: "lighting", label: "Lighting Control" },
+    { id: "algae", label: "Algae System" },
+    { id: "settings", label: "System Settings" },
+  ];
   const tabIcons = [
     <svg key="t0" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.43A2 2 0 0 1 14 9.53V2"/><path d="M8.5 2h7"/></svg>,
     <svg key="t1" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><circle cx="12" cy="12" r="10"/></svg>,
     <svg key="t2" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
-    <svg key="t3" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>,
+    <svg key="t3" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>,
+    <svg key="t4" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>,
   ];
 
   return (
-    <div className="h-screen flex flex-col" style={{ background: "var(--bg)" }}>
+    <div style={{ width: "100vw", height: "100vh", minHeight: "100vh", overflow: "hidden", background: "var(--bg)" }}>
+      <div
+        style={{
+          width: `${100 / dashboardScale}%`,
+          height: `${100 / dashboardScale}%`,
+          minHeight: `${100 / dashboardScale}%`,
+          transform: `scale(${dashboardScale})`,
+          transformOrigin: "top left",
+          willChange: "transform",
+        }}
+      >
+    <div className="h-screen flex flex-col" style={{ background: "var(--bg)", minHeight: "100vh", height: "100vh" }}>
       {/* Ambient BG */}
       <div className="ambient-bg">
         <div className="orb orb-1" />
@@ -659,6 +1136,48 @@ function DashboardPageContent() {
           </div>
           <p className="font-semibold" style={{ fontSize: 16, color: "var(--text-2)" }}>Loading AlgaeTree AI...</p>
           <p style={{ fontSize: 13, color: "var(--text-3)" }}>Preparing your conversation</p>
+        </motion.div>
+      )}
+
+      {cooldownLeftSec > 0 && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 130,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(2,6,23,0.34)",
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
+            pointerEvents: "auto",
+          }}
+        >
+          <div
+            style={{
+              borderRadius: 16,
+              border: "1px solid rgba(59,130,246,0.35)",
+              background: "rgba(255,255,255,0.96)",
+              boxShadow: "0 14px 36px rgba(2,6,23,0.26)",
+              padding: "18px 20px",
+              minWidth: 260,
+              textAlign: "center",
+            }}
+          >
+            <p style={{ fontSize: 11, fontWeight: 800, color: "#1d4ed8", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+              Cooldown Active
+            </p>
+            <p style={{ fontSize: 15, fontWeight: 800, color: "#0f172a", marginTop: 6 }}>
+              Controls unlock in {cooldownLeftSec}s
+            </p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: "#475569", marginTop: 4 }}>
+              Please wait before the next control action.
+            </p>
+          </div>
         </motion.div>
       )}
 
@@ -791,8 +1310,8 @@ function DashboardPageContent() {
         <motion.main
           className="relative z-10 flex-1 grid overflow-hidden dash-grid"
           style={{
-            padding: "20px 24px",
-            gap: 18,
+            padding: "16px 20px 8px",
+            gap: 14,
             gridTemplateColumns: activeTab === 0 ? "1.1fr 1fr 1fr" : "1fr 1fr 1fr",
             gridTemplateRows: activeTab === 0 ? "1fr 1fr auto" : "1fr 1fr auto",
           }}
@@ -1160,21 +1679,175 @@ function DashboardPageContent() {
           </>
         )}
 
-        {/* ═══════════ TAB 3 — SYSTEM ═══════════ */}
+        {/* ═══════════ TAB 3 — CYCLES ═══════════ */}
         {activeTab === 3 && (
+          <>
+            <motion.div
+              className="card flex flex-col dash-hero"
+              style={{
+                padding: 28, gridRow: "1 / 3",
+                background: "var(--surface)",
+                ['--card-tint' as React.CSSProperties & string]: 'rgba(59,130,246,0.12)',
+              } as React.CSSProperties}
+              variants={rise}
+            >
+              <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+                <div className="flex items-center" style={{ gap: 10 }}>
+                  <div className="rounded-2xl flex items-center justify-center" style={{ width: 44, height: 44, background: "rgba(59,130,246,0.1)" }}>
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                  </div>
+                  <div>
+                    <p className="font-bold" style={{ fontSize: 18 }}>Cycle Explorer</p>
+                    <p style={{ fontSize: 11, color: "var(--text-3)", fontWeight: 700 }}>
+                      {selectedCycle ? `Cycle ${selectedCycle.key}` : "No cycles available"}
+                    </p>
+                  </div>
+                </div>
+                <Badge label={selectedCycle?.endDate === "Current" ? "Current" : "Archived"} color={selectedCycle?.endDate === "Current" ? "green" : "orange"} />
+              </div>
+
+              <div className="grid grid-cols-3" style={{ gap: 8, marginBottom: 14 }}>
+                {[
+                  { l: "Total Cycles", v: String(cycleTotal) },
+                  { l: "Start Date", v: selectedCycle?.startDate ?? "--/--/----" },
+                  { l: "End Date", v: selectedCycle?.endDate ?? "--/--/----" },
+                ].map((s) => (
+                  <div key={s.l} className="rounded-xl" style={{ padding: "10px 10px", border: "1px solid var(--border)", background: "var(--mini-bg)" }}>
+                    <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.l}</p>
+                    <p style={{ fontSize: 12, color: "var(--text-2)", fontWeight: 800, marginTop: 4 }}>{s.v}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-3" style={{ gap: 8, marginBottom: 14 }}>
+                {[
+                  { l: "Biomass", v: `${selectedCycle?.biomass ?? 0} kg` },
+                  { l: "CO2 Captured", v: `${selectedCycle?.co2Captured ?? 0} kg` },
+                  { l: "O2 Released", v: `${selectedCycle?.o2Released ?? 0} kg` },
+                ].map((s) => (
+                  <div key={s.l} className="rounded-xl" style={{ padding: "10px 10px", border: "1px solid var(--border)", background: "var(--mini-bg)" }}>
+                    <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.l}</p>
+                    <p style={{ fontSize: 12, color: "var(--text-2)", fontWeight: 800, marginTop: 4 }}>{s.v}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between" style={{ gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setExplorerCycleIndex((idx) => Math.min(idx + 1, cycleTotal - 1))}
+                  disabled={!cycleCanGoOlder}
+                  className="cursor-pointer"
+                  style={{
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: cycleCanGoOlder ? "var(--mini-bg)" : "rgba(148,163,184,0.12)",
+                    color: cycleCanGoOlder ? "var(--text-2)" : "var(--text-3)",
+                    padding: "10px 12px",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    opacity: cycleCanGoOlder ? 1 : 0.6,
+                  }}
+                >
+                  Older Cycle
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExplorerCycleIndex((idx) => Math.max(idx - 1, 0))}
+                  disabled={!cycleCanGoNewer}
+                  className="cursor-pointer"
+                  style={{
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: cycleCanGoNewer ? "var(--mini-bg)" : "rgba(148,163,184,0.12)",
+                    color: cycleCanGoNewer ? "var(--text-2)" : "var(--text-3)",
+                    padding: "10px 12px",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    opacity: cycleCanGoNewer ? 1 : 0.6,
+                  }}
+                >
+                  Newer Cycle
+                </button>
+              </div>
+            </motion.div>
+
+            <motion.div
+              className="card flex flex-col"
+              style={{
+                padding: 24,
+                gridColumn: "2 / 4",
+                gridRow: "1 / 3",
+                minHeight: 0,
+                background: "var(--surface)",
+                ['--card-tint' as React.CSSProperties & string]: 'rgba(59,130,246,0.12)',
+              } as React.CSSProperties}
+              variants={rise}
+            >
+              <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+                <span className="font-semibold" style={{ fontSize: 15, color: "var(--text-2)" }}>Cycle Sensor Data</span>
+                <span style={{ fontSize: 11, color: "var(--text-3)", fontWeight: 700 }}>
+                  {selectedCycle?.dates?.length ?? 0} samples
+                </span>
+              </div>
+
+              {!selectedCycle ? (
+                <div className="rounded-xl" style={{ padding: 14, border: "1px solid var(--border)", background: "var(--mini-bg)", color: "var(--text-3)", fontWeight: 700 }}>
+                  No cycle data found for this device.
+                </div>
+              ) : (
+                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
+                  <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                    {cycleSensorOrder.map((sensor) => {
+                      const values = selectedCycle.series[sensor];
+                      const latest = values[values.length - 1] ?? 0;
+                      const min = values.length ? Math.min(...values) : 0;
+                      const max = values.length ? Math.max(...values) : 0;
+                      return (
+                        <div key={sensor} className="rounded-xl" style={{ padding: "10px 10px", border: "1px solid var(--border)", background: "var(--mini-bg)" }}>
+                          <p style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}>{cycleSensorLabel[sensor]}</p>
+                          <p style={{ fontSize: 14, color: "var(--text-2)", fontWeight: 800, marginTop: 3 }}>
+                            {latest} <span style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 700 }}>{cycleSensorUnit[sensor]}</span>
+                          </p>
+                          <p style={{ fontSize: 10, color: "var(--text-3)", marginTop: 4 }}>
+                            min {min} | max {max}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="rounded-xl" style={{ marginTop: 10, padding: "10px 10px", border: "1px solid var(--border)", background: "var(--mini-bg)" }}>
+                    <p style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Sample Dates</p>
+                    <p style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 700, overflowWrap: "anywhere" }}>
+                      {(selectedCycle.dates.length ? selectedCycle.dates : ["No dates"]).join(" | ")}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+
+        {/* ═══════════ TAB 4 — SYSTEM ═══════════ */}
+        {activeTab === 4 && (
           <>
             {/* Hero: System Status */}
             <motion.div
               className="card flex flex-col dash-hero"
               style={{
-                padding: 32, gridRow: "1 / 3",
+                padding: 22, gridRow: "1 / 3",
                 background: "var(--surface)",
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 ['--card-tint' as any]: 'rgba(251,191,36,0.12)',
               }}
               variants={rise}
             >
-              <div className="flex items-center justify-between" style={{ marginBottom: 24 }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
                 <div className="flex items-center" style={{ gap: 12 }}>
                   <div className="rounded-2xl flex items-center justify-center" style={{ width: 48, height: 48, background: "rgba(251,191,36,0.1)" }}>
                     <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
@@ -1183,52 +1856,93 @@ function DashboardPageContent() {
                 </div>
                 <Badge label={d.networkUp ? "Online" : "Offline"} color={d.networkUp ? "green" : "orange"} />
               </div>
-              <div className="flex-1 flex flex-col items-center justify-center" style={{ gap: 12 }}>
-                <motion.p className="font-black text-amber-400 leading-none" style={{ fontSize: "4.5rem", filter: "drop-shadow(0 0 40px rgba(251,191,36,0.3))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.sensorHealth}%</motion.p>
-                <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)" }}>Sensor Health</p>
+              <div className="grid" style={{ gridTemplateColumns: "minmax(0, 180px) minmax(0, 1fr)", gap: 10, marginBottom: 10, alignItems: "stretch" }}>
+                <div className="rounded-2xl flex flex-col items-center justify-center" style={{ padding: "16px 12px", border: "1px solid rgba(251,191,36,0.18)", background: "linear-gradient(155deg, rgba(251,191,36,0.14), rgba(255,255,255,0.9))", gap: 4 }}>
+                  <motion.p className="font-black text-amber-400 leading-none" style={{ fontSize: "3.25rem", filter: "drop-shadow(0 0 28px rgba(251,191,36,0.24))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.sensorHealth}%</motion.p>
+                  <p className="font-bold uppercase tracking-[0.24em]" style={{ fontSize: 10, color: "var(--text-3)" }}>Sensor Health</p>
+                </div>
+                <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                  {[
+                    { l: "CPU TEMP", v: `${d.cpuTemp}°C` },
+                    { l: "CPU USAGE", v: `${d.cpuUsage}%` },
+                    { l: "MEMORY", v: `${d.memUsage}%` },
+                    { l: "DEVICE", v: d.activeTreeId },
+                    { l: "LAST ONLINE", v: d.lastOnline },
+                    { l: "LAST CHECK", v: d.lastCheck },
+                  ].map((s) => (
+                    <div key={s.l} className="rounded-xl" style={{ padding: "10px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)", minWidth: 0 }}>
+                      <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 8, color: "var(--text-3)" }}>{s.l}</p>
+                      <p className="font-bold" style={{ fontSize: 12, marginTop: 3, overflowWrap: "anywhere", lineHeight: 1.2 }}>{s.v}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 8 }}>
-                {[
-                  { l: "CPU TEMP", v: `${d.cpuTemp}°C` },
-                  { l: "CPU USAGE", v: `${d.cpuUsage}%` },
-                  { l: "MEMORY", v: `${d.memUsage}%` },
-                ].map((s) => (
-                  <div key={s.l} className="rounded-xl" style={{ padding: "12px 12px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
-                    <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
-                    <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* System mini stats */}
-              <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
-                {[{ l: "DEVICE", v: d.activeTreeId }, { l: "LAST ONLINE", v: d.lastOnline }, { l: "LAST CHECK", v: d.lastCheck }].map(s => (
-                  <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "var(--mini-bg)" }}>
-                    <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
-                    <p className="font-bold" style={{ fontSize: 14, marginTop: 4 }}>{s.v}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-2" style={{ gap: 10, marginTop: 12 }}>
+              <div className="grid grid-cols-2" style={{ gap: 8, marginTop: 0 }}>
                 {[
                   { l: "Battery", v: `${d.batteryPercentage}%`, color: "#4ade80" },
                   { l: "Charging", v: d.batteryCharging ? "Yes" : "No", color: "#38bdf8" },
                   { l: "Network", v: d.networkUp ? "Connected" : "Disconnected", color: d.networkUp ? "#4ade80" : "#f97316" },
                   { l: "Error Flag", v: d.error ? "True" : "False", color: d.error ? "#f97316" : "#a855f7" },
                 ].map((item) => (
-                  <div key={item.l} className="rounded-xl flex items-center justify-between" style={{ padding: "10px 12px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
-                    <span style={{ fontSize: 12, color: "var(--text-2)", fontWeight: 600 }}>{item.l}</span>
+                  <div key={item.l} className="rounded-xl flex items-center justify-between" style={{ padding: "8px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
+                    <span style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 600 }}>{item.l}</span>
                     <div className="flex items-center" style={{ gap: 6 }}>
-                      <span style={{ fontSize: 12, color: item.color, fontWeight: 700 }}>{item.v}</span>
-                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: item.color }} />
+                      <span style={{ fontSize: 11, color: item.color, fontWeight: 700 }}>{item.v}</span>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: item.color }} />
                     </div>
                   </div>
                 ))}
               </div>
 
-              <div className="rounded-2xl" style={{ marginTop: 12, padding: 12, border: "1px solid rgba(148,163,184,0.22)", background: "linear-gradient(150deg, rgba(2,132,199,0.08), rgba(2,6,23,0.1))" }}>
+              <div className="grid grid-cols-2" style={{ gap: 8, marginTop: 8 }}>
+                {[
+                  { l: "Change Node", v: String(d.change) },
+                  { l: "Display Pin", v: d.displayPin },
+                  { l: "WiFi SSID", v: d.wifiSsid },
+                  { l: "Install Date", v: d.installationDate },
+                ].map((item) => (
+                  <div key={item.l} className="rounded-xl" style={{ padding: "8px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
+                    <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.l}</p>
+                    <p style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 700, marginTop: 3, overflowWrap: "anywhere", lineHeight: 1.2 }}>{item.v}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-3" style={{ gap: 8, marginTop: 8 }}>
+                {[
+                  { l: "Cycle Start", v: d.cycleStartDate },
+                  { l: "Cycle End", v: d.cycleEndDate },
+                  { l: "Days Remaining", v: `${d.cycleDaysRemaining} Days` },
+                ].map((item) => (
+                  <div key={item.l} className="rounded-xl" style={{ padding: "8px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
+                    <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.l}</p>
+                    <p style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 700, marginTop: 3, lineHeight: 1.2 }}>{item.v}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-2xl" style={{ marginTop: 8, padding: 10, border: "1px solid rgba(244,63,94,0.25)", background: "rgba(244,63,94,0.06)" }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: specificErrors.length > 0 ? 8 : 0 }}>
+                  <p style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700, color: specificErrors.length > 0 ? "#e11d48" : "#16a34a" }}>
+                    Diagnostics
+                  </p>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)" }}>{specificErrors.length > 0 ? "Attention" : "Optimal"}</span>
+                </div>
+                {specificErrors.length > 0 ? (
+                  <div className="grid grid-cols-2" style={{ gap: 8 }}>
+                    {specificErrors.map((name) => (
+                      <div key={name} className="rounded-xl" style={{ padding: "7px 9px", border: "1px solid rgba(244,63,94,0.25)", background: "rgba(244,63,94,0.08)", color: "#e11d48", fontSize: 10, fontWeight: 700 }}>
+                        Sensor mismatch: {name}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#15803d" }}>System optimal. No active sensor mismatch.</p>
+                )}
+              </div>
+
+              <div className="rounded-2xl" style={{ marginTop: 8, padding: 10, border: "1px solid rgba(148,163,184,0.22)", background: "linear-gradient(150deg, rgba(2,132,199,0.08), rgba(2,6,23,0.1))" }}>
                 <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
                   <p style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700, color: "#38bdf8" }}>LDR Sensor Matrix</p>
                   <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)" }}>Live</span>
@@ -1240,9 +1954,9 @@ function DashboardPageContent() {
                     { k: "LDR3", v: d.ldrStatus.LDR3 },
                     { k: "LDR4", v: d.ldrStatus.LDR4 },
                   ] as const).map((ldr) => (
-                    <div key={ldr.k} className="rounded-xl" style={{ padding: "9px 10px", border: "1px solid rgba(148,163,184,0.22)", background: "rgba(15,23,42,0.12)", textAlign: "center" }}>
-                      <p style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 700 }}>{ldr.k}</p>
-                      <p style={{ fontSize: 12, fontWeight: 800, color: ldr.v ? "#22c55e" : "#94a3b8", letterSpacing: "0.04em" }}>{ldr.v ? "LIGHT" : "DARK"}</p>
+                    <div key={ldr.k} className="rounded-xl" style={{ padding: "8px 8px", border: "1px solid rgba(148,163,184,0.22)", background: "rgba(15,23,42,0.12)", textAlign: "center" }}>
+                      <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 700 }}>{ldr.k}</p>
+                      <p style={{ fontSize: 11, fontWeight: 800, color: ldr.v ? "#22c55e" : "#94a3b8", letterSpacing: "0.04em" }}>{ldr.v ? "LIGHT" : "DARK"}</p>
                     </div>
                   ))}
                 </div>
@@ -1253,7 +1967,7 @@ function DashboardPageContent() {
             <motion.div
               className="card flex flex-col"
               style={{
-                padding: 28,
+                padding: 20,
                 gridColumn: "2 / 4",
                 gridRow: "1 / 3",
                 minHeight: 0,
@@ -1302,105 +2016,232 @@ function DashboardPageContent() {
                 </div>
               )}
 
-              <div className="flex items-center justify-between" style={{ gap: 8, marginBottom: 16 }}>
+              <div className="flex items-center justify-between" style={{ gap: 8, marginBottom: 12 }}>
                 <div className="flex items-center" style={{ gap: 8 }}>
                   <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                   <span className="font-semibold" style={{ fontSize: 16, color: "var(--text-2)" }}>Device Control Center</span>
                 </div>
-                <span style={{ fontSize: 11, color: "var(--text-3)", fontWeight: 700 }}>{controlBusy ? "SYNCING..." : "LIVE"}</span>
+                <span style={{ fontSize: 11, color: "var(--text-3)", fontWeight: 700 }}>
+                  {pendingSyncCount > 0
+                    ? "SYNCING..."
+                    : cooldownLeftSec > 0
+                      ? `COOLDOWN ${cooldownLeftSec}s`
+                      : `LIVE | CHANGE ${d.change}`}
+                </span>
               </div>
 
-              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
-
-              <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
-                <ToggleChip label="Oxygen Infusion" enabled={uiOperations.AirBubbles} busy={controlBusy} onToggle={() => { void toggleOperation("AirBubbles"); }} />
-                <ToggleChip label="Air Purification" enabled={uiOperations.Fan} busy={controlBusy} onToggle={() => { void toggleOperation("Fan"); }} />
-                <ToggleChip label="Drain" enabled={uiOperations.Drain} busy={controlBusy} onToggle={() => { void toggleOperation("Drain"); }} />
-                <ToggleChip label="Filling" enabled={uiOperations.Filling} busy={controlBusy} onToggle={() => { void toggleOperation("Filling"); }} />
-                <ToggleChip label="Solar Cleaning" enabled={uiOperations.SolarCleaning} busy={controlBusy} onToggle={() => { void toggleOperation("SolarCleaning"); }} />
-                <ToggleChip
-                  label="LED Auto Ops"
-                  enabled={uiOperations.LED1 || uiOperations.LED2 || uiOperations.LED3 || uiOperations.LED4}
-                  busy={controlBusy}
-                  onToggle={() => {
-                    const next = !(uiOperations.LED1 || uiOperations.LED2 || uiOperations.LED3 || uiOperations.LED4);
-                    const nextOps = {
-                      ...uiOperations,
-                      LED1: next,
-                      LED2: next,
-                      LED3: next,
-                      LED4: next,
-                    };
-                    setUiOperations(nextOps);
-                    const ledKeys: (keyof typeof ledIntensityChangeCodes)[] = ["LED1", "LED2", "LED3", "LED4"];
-                    void (async () => {
-                      for (let i = 0; i < ledKeys.length; i += 1) {
-                        const ledKey = ledKeys[i];
-                        const isLast = i === ledKeys.length - 1;
-                        await sendChangeCommand(
-                          operationChangeCodes[ledKey],
-                          next ? 1 : 0,
-                          isLast ? { Operations: nextOps } : undefined,
-                        );
-                      }
-                    })();
-                  }}
-                />
+              <div className="flex flex-wrap" style={{ gap: 8, marginBottom: 12 }}>
+                {controlPanelTabs.map((panelTab) => {
+                  const active = controlPanelTab === panelTab.id;
+                  return (
+                    <button
+                      key={panelTab.id}
+                      type="button"
+                      onClick={() => setControlPanelTab(panelTab.id)}
+                      className="cursor-pointer"
+                      style={{
+                        borderRadius: 12,
+                        border: active ? "1px solid rgba(56,189,248,0.45)" : "1px solid rgba(148,163,184,0.25)",
+                        background: active
+                          ? "linear-gradient(140deg, rgba(56,189,248,0.2), rgba(14,116,144,0.08))"
+                          : "linear-gradient(140deg, rgba(15,23,42,0.08), rgba(148,163,184,0.06))",
+                        color: active ? "#0284c7" : "var(--text-2)",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                        padding: "8px 12px",
+                        boxShadow: active ? "0 10px 20px rgba(2,132,199,0.15)" : "none",
+                      }}
+                    >
+                      {panelTab.label}
+                    </button>
+                  );
+                })}
               </div>
 
-              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>LED Intensity Control</p>
-              <div style={{ marginBottom: 10 }}>
-                <IntensitySlider
-                  label="Master LED"
-                  value={masterLedValue}
-                  onChange={(v) => {
-                    setLedDraft({ LED1: v, LED2: v, LED3: v, LED4: v });
-                  }}
-                  onCommit={() => {
-                    void commitIntensity(ledDraft, ["LED1", "LED2", "LED3", "LED4"]);
-                  }}
-                />
-              </div>
-              <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
-                <IntensitySlider label="LED1" value={ledDraft.LED1} onChange={(v) => setLedDraft((p) => ({ ...p, LED1: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED1"]); }} />
-                <IntensitySlider label="LED2" value={ledDraft.LED2} onChange={(v) => setLedDraft((p) => ({ ...p, LED2: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED2"]); }} />
-                <IntensitySlider label="LED3" value={ledDraft.LED3} onChange={(v) => setLedDraft((p) => ({ ...p, LED3: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED3"]); }} />
-                <IntensitySlider label="LED4" value={ledDraft.LED4} onChange={(v) => setLedDraft((p) => ({ ...p, LED4: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED4"]); }} />
-              </div>
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingRight: 2 }}>
+                {controlPanelTab === "flow" && (
+                  <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(15,23,42,0.08), rgba(56,189,248,0.04))", display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                      <ToggleChip label="Filling" enabled={uiOperations.Filling} busy={controlBusy} onToggle={() => { void toggleFluidOperation("Filling"); }} />
+                      <ToggleChip label="Drain" enabled={uiOperations.Drain} busy={controlBusy} onToggle={() => { void toggleFluidOperation("Drain"); }} />
+                      <ToggleChip label="Fan" enabled={uiOperations.Fan} busy={controlBusy} onToggle={() => { void toggleOperation("Fan"); }} />
+                      <ToggleChip label="Air Bubbles" enabled={uiOperations.AirBubbles} busy={controlBusy} onToggle={() => { void toggleOperation("AirBubbles"); }} />
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <ToggleChip label="Solar Cleaning" enabled={uiOperations.SolarCleaning} busy={controlBusy} onToggle={() => { void toggleOperation("SolarCleaning"); }} />
+                      </div>
+                    </div>
 
-              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Air Bubble Cycle Timing</p>
-              <div className="grid grid-cols-2" style={{ gap: 10, marginBottom: 14 }}>
-                <div className="rounded-xl" style={{ padding: "10px 12px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-2)", marginBottom: 6 }}>Bubbles ON (sec)</p>
-                  <input type="range" min={1} max={120} value={uiAirBubblesTiming.on} onChange={(e) => { void setBubblesTiming("on", Number(e.target.value)); }} style={{ width: "100%", accentColor: "#22c55e" }} />
-                  <p style={{ fontSize: 11, color: "var(--text-3)" }}>{uiAirBubblesTiming.on}s</p>
-                </div>
-                <div className="rounded-xl" style={{ padding: "10px 12px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-2)", marginBottom: 6 }}>Bubbles OFF (sec)</p>
-                  <input type="range" min={1} max={120} value={uiAirBubblesTiming.off} onChange={(e) => { void setBubblesTiming("off", Number(e.target.value)); }} style={{ width: "100%", accentColor: "#22c55e" }} />
-                  <p style={{ fontSize: 11, color: "var(--text-3)" }}>{uiAirBubblesTiming.off}s</p>
-                </div>
-              </div>
+                    <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                      <RoundKnob
+                        label="Bubble ON"
+                        value={uiAirBubblesTiming.on}
+                        min={0}
+                        max={120}
+                        unit="min"
+                        accent="#38bdf8"
+                        variant="large"
+                        busy={controlBusy}
+                        onChange={(v) => updateBubblesTimingDraft("on", v)}
+                        onCommit={() => { void commitBubblesTiming("on"); }}
+                      />
+                      <RoundKnob
+                        label="Bubble OFF"
+                        value={uiAirBubblesTiming.off}
+                        min={0}
+                        max={120}
+                        unit="min"
+                        accent="#22c55e"
+                        variant="large"
+                        busy={controlBusy}
+                        onChange={(v) => updateBubblesTimingDraft("off", v)}
+                        onCommit={() => { void commitBubblesTiming("off"); }}
+                      />
+                    </div>
+                  </div>
+                )}
 
-              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Nutrition Dosing (Motor Volumes)</p>
-              <div className="grid" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 8, marginBottom: 14 }}>
-                {([
-                  "Motor1Volume",
-                  "Motor2Volume",
-                  "Motor3Volume",
-                  "Motor4Volume",
-                  "Motor5Volume",
-                ] as const).map((k) => (
-                  <IntensitySlider
-                    key={k}
-                    label={k.replace("Volume", "")}
-                    value={nutritionDraft[k]}
-                    onChange={(v) => setNutritionDraft((p) => ({ ...p, [k]: v }))}
-                    onCommit={() => { void commitNutrition(k); }}
-                  />
-                ))}
-              </div>
+                {controlPanelTab === "lighting" && (
+                  <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(34,197,94,0.12), rgba(56,189,248,0.04))", display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div className="rounded-xl" style={{ padding: "10px 12px", border: "1px solid var(--border)", background: "var(--mini-bg)" }}>
+                      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-2)", letterSpacing: "0.03em", textTransform: "uppercase" }}>Master Lighting</span>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "#16a34a" }}>{masterLedValue}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={255}
+                        step={1}
+                        value={masterLedValue}
+                        disabled={controlBusy}
+                        onChange={(e) => {
+                          const next = clampNumber(Number(e.currentTarget.value), 0, 255);
+                          setLedDraft({
+                            LED1: next,
+                            LED2: next,
+                            LED3: next,
+                            LED4: next,
+                          });
+                        }}
+                        onMouseUp={(e) => {
+                          void commitMasterIntensitySequential(Number(e.currentTarget.value));
+                        }}
+                        onTouchEnd={(e) => {
+                          void commitMasterIntensitySequential(Number(e.currentTarget.value));
+                        }}
+                        style={{
+                          width: "100%",
+                          accentColor: "#22c55e",
+                          cursor: controlBusy ? "not-allowed" : "pointer",
+                          opacity: controlBusy ? 0.7 : 1,
+                        }}
+                      />
+                      <p style={{ marginTop: 6, fontSize: 10, color: "var(--text-3)", fontWeight: 700 }}>
+                        Applies one zone at a time in sequence: LED1 → LED2 → LED3 → LED4.
+                      </p>
+                    </div>
 
+                    <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                      {([
+                        { key: "LED1", label: "Grow Light Zone 1", enabled: uiOperations.LED1 },
+                        { key: "LED2", label: "Grow Light Zone 2", enabled: uiOperations.LED2 },
+                        { key: "LED3", label: "Grow Light Zone 3", enabled: uiOperations.LED3 },
+                        { key: "LED4", label: "Grow Light Zone 4", enabled: uiOperations.LED4 },
+                      ] as const).map((item) => (
+                        <ToggleChip key={item.key} label={item.label} enabled={item.enabled} busy={controlBusy} onToggle={() => { void toggleOperation(item.key); }} />
+                      ))}
+                    </div>
+
+                    <div className="rounded-xl" style={{ border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(15,23,42,0.08), rgba(255,255,255,0.06)), var(--surface)", boxShadow: "0 10px 24px rgba(2,6,23,0.14), inset 0 1px 0 rgba(255,255,255,0.22)", padding: "10px 12px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
+                        <RoundKnob label="Brightness 1" value={ledDraft.LED1} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED1 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED1: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED1"]); }} />
+                        <RoundKnob label="Brightness 2" value={ledDraft.LED2} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED2 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED2: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED2"]); }} />
+                        <RoundKnob label="Brightness 3" value={ledDraft.LED3} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED3 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED3: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED3"]); }} />
+                        <RoundKnob label="Brightness 4" value={ledDraft.LED4} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED4 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED4: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED4"]); }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {controlPanelTab === "algae" && (
+                  <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(34,197,94,0.12), rgba(22,163,74,0.05))", display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                      {([
+                        "Motor1Volume",
+                        "Motor2Volume",
+                        "Motor3Volume",
+                        "Motor4Volume",
+                        "Motor5Volume",
+                      ] as const).map((k, idx) => (
+                        <RoundKnob
+                          key={k}
+                          label={`Dosing M${idx + 1}`}
+                          value={nutritionDraft[k]}
+                          min={0}
+                          max={255}
+                          unit="ml"
+                          accent="#22c55e"
+                          variant="large"
+                          busy={controlBusy}
+                          onChange={(v) => setNutritionDraft((p) => ({ ...p, [k]: v }))}
+                          onCommit={() => { void commitNutrition(); }}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex" style={{ gap: 8, justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        className="cursor-pointer"
+                        onClick={() => { void commitNutrition(); }}
+                        disabled={controlBusy}
+                        style={{ borderRadius: 12, border: "1px solid rgba(34,197,94,0.4)", background: "rgba(34,197,94,0.12)", color: "#15803d", padding: "8px 12px", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}
+                      >
+                        Apply Dosing
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {controlPanelTab === "settings" && (
+                  <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(148,163,184,0.14), rgba(30,41,59,0.06))", display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                      {[
+                        { l: "Change Node", v: String(d.change) },
+                        { l: "Cooldown", v: cooldownLeftSec > 0 ? `${cooldownLeftSec}s` : "Ready" },
+                        { l: "Sync State", v: controlBusy ? "Syncing" : "Idle" },
+                        { l: "LED Avg", v: String(masterLedValue) },
+                      ].map((item) => (
+                        <div key={item.l} className="rounded-xl" style={{ padding: "9px 10px", border: "1px solid var(--border)", background: "var(--mini-bg)" }}>
+                          <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em" }}>{item.l}</p>
+                          <p style={{ fontSize: 12, color: "var(--text-2)", fontWeight: 800, marginTop: 4, overflowWrap: "anywhere" }}>{item.v}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex" style={{ gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        className="cursor-pointer"
+                        onClick={() => { void commitNutrition(); }}
+                        disabled={controlBusy}
+                        style={{ borderRadius: 12, border: "1px solid rgba(34,197,94,0.4)", background: "rgba(34,197,94,0.12)", color: "#15803d", padding: "8px 12px", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}
+                      >
+                        Apply Dosing
+                      </button>
+                      <button
+                        type="button"
+                        className="cursor-pointer"
+                        onClick={() => { void sendChangeCommand(9, 0, {}); }}
+                        disabled={controlBusy}
+                        style={{ borderRadius: 12, border: "1px solid rgba(59,130,246,0.4)", background: "rgba(59,130,246,0.12)", color: "#1d4ed8", padding: "8px 12px", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em" }}
+                      >
+                        Sensor Test
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
             </motion.div>
@@ -1411,7 +2252,7 @@ function DashboardPageContent() {
         <motion.footer
           className="card flex items-center justify-between dash-footer"
           style={{
-            padding: "22px 36px", gridColumn: "1 / -1",
+            gridColumn: "1 / -1",
             background: "var(--surface)",
           }}
           variants={rise}
@@ -1431,26 +2272,33 @@ function DashboardPageContent() {
             { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>, l: "Carbon Fixed", v: `${d.carbonFixRate} g/h`, bg: "rgba(34,197,94,0.12)" },
             { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>, l: "O₂ Produced", v: `${d.oxygenProd} g/h`, bg: "rgba(56,189,248,0.12)" },
             { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67 0C8.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>, l: "Energy", v: `${d.energyUsage}W`, bg: "rgba(251,191,36,0.12)" },
+          ] : activeTab === 3 ? [
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>, l: "Cycle", v: selectedCycle ? `#${selectedCycle.key}` : "--", bg: "rgba(59,130,246,0.12)" },
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#22c55e" strokeWidth="2" strokeLinecap="round"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/></svg>, l: "Biomass", v: `${selectedCycle?.biomass ?? 0} kg`, bg: "rgba(34,197,94,0.12)" },
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>, l: "CO2", v: `${selectedCycle?.co2Captured ?? 0} kg`, bg: "rgba(249,115,22,0.12)" },
+            { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/></svg>, l: "O2", v: `${selectedCycle?.o2Released ?? 0} kg`, bg: "rgba(56,189,248,0.12)" },
           ] : [
             { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>, l: "CPU Temp", v: `${d.cpuTemp}°C`, bg: "rgba(249,115,22,0.12)" },
             { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>, l: "CPU Usage", v: `${d.cpuUsage}%`, bg: "rgba(56,189,248,0.12)" },
             { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>, l: "Memory", v: `${d.memUsage}%`, bg: "rgba(168,85,247,0.12)" },
             { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>, l: "Disk", v: `${d.diskUsage}%`, bg: "rgba(251,191,36,0.12)" },
           ]).map(s => (
-            <div key={s.l} className="flex items-center" style={{ gap: 14 }}>
+            <div key={s.l} className="flex items-center dash-footer-stat" style={{ gap: 14 }}>
               <div
-                className="rounded-full flex items-center justify-center"
+                className="rounded-full flex items-center justify-center dash-footer-icon"
                 style={{ width: 42, height: 42, background: s.bg }}
               >{s.icon}</div>
-              <div>
-                <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 10, color: "var(--text-3)" }}>{s.l}</p>
-                <p className="font-bold" style={{ fontSize: 15, marginTop: 2 }}>{s.v}</p>
+              <div className="dash-footer-copy">
+                <p className="font-semibold uppercase tracking-wider dash-footer-label" style={{ fontSize: 10, color: "var(--text-3)" }}>{s.l}</p>
+                <p className="font-bold dash-footer-value" style={{ fontSize: 15, marginTop: 2 }}>{s.v}</p>
               </div>
             </div>
           ))}
         </motion.footer>
       </motion.main>
       </AnimatePresence>
+    </div>
+      </div>
     </div>
   );
 }

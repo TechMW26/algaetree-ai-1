@@ -5,9 +5,14 @@ import { useState, useEffect } from "react";
 export interface LiveData {
   activeTreeId: string;
   location: string;
+  installationDate: string;
   treeCount: number;
+  change: number;
   batteryPercentage: number;
   batteryCharging: boolean;
+  displayPin: string;
+  wifiSsid: string;
+  wifiPassword: string;
   error: boolean;
   lastCheck: string;
   lastOnline: string;
@@ -36,6 +41,29 @@ export interface LiveData {
   air: number;
   uptime: string;
   growth: number;
+  cycleStartDate: string;
+  cycleEndDate: string;
+  cycleDaysRemaining: number;
+  cycleExplorer: Array<{
+    key: number;
+    startDate: string;
+    endDate: string;
+    biomass: number;
+    co2Captured: number;
+    o2Released: number;
+    dates: string[];
+    series: {
+      AQI: number[];
+      CO2: number[];
+      PH: number[];
+      Temprature: number[];
+      TDS: number[];
+      ECO2: number[];
+      TVOC: number[];
+      LTurbidity: number[];
+      UTurbidity: number[];
+    };
+  }>;
   /* Environment */
   ambientTemp: number;
   humidity: number;
@@ -100,21 +128,31 @@ export interface LiveData {
 }
 
 type DbCyclePoint = {
+  StartDate?: string;
+  EndDate?: string;
   Biomass?: number;
   O2Released?: number;
   "CO2Captured "?: number;
   Date?: string[];
+  AQI?: number[];
   CO2?: number[];
+  PH?: number[];
+  TDS?: number[];
   ECO2?: number[];
+  TVOC?: number[];
   Temprature?: number[];
   LTurbidity?: number[];
   UTurbidity?: number[];
 };
 
 type DbTree = {
+  Change?: number;
   DeviceID?: string;
+  DisplayPin?: number | string;
   Error?: boolean;
+  InstallationDate?: string;
   Location?: string;
+  Password?: string;
   Battery?: {
     Charging?: boolean;
     Percentage?: number;
@@ -144,6 +182,7 @@ type DbTree = {
   };
   Cycle?: {
     Data?: Record<string, DbCyclePoint | number | undefined>;
+    NewCycleStartDate?: string;
     TotalCO2Absorbed?: number;
     TotalO2Released?: number;
   };
@@ -175,6 +214,10 @@ type DbTree = {
     Motor4Volume?: number;
     Motor5Volume?: number;
   };
+  WiFi?: {
+    SSID?: string;
+    Password?: string;
+  };
 };
 
 type DbRoot = {
@@ -191,6 +234,11 @@ function toNum(v: unknown, fallback = 0): number {
     if (Number.isFinite(n)) return n;
   }
   return fallback;
+}
+
+function toNumArray(v: unknown): number[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((item) => toNum(item, 0));
 }
 
 function pickNum(
@@ -226,6 +274,21 @@ function diffDays(fromDate?: string): number {
   if (!start) return 0;
   const ms = Date.now() - start.getTime();
   return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+}
+
+function formatDdMmYyyy(dt: Date): string {
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function cycleEndDate(startDate?: string): string {
+  const start = parseDdMmYyyy(startDate);
+  if (!start) return "--/--/----";
+  const end = new Date(start);
+  end.setDate(end.getDate() + 30);
+  return formatDdMmYyyy(end);
 }
 
 function getDisplayLocation(treeId: string, fallback?: string): string {
@@ -264,9 +327,37 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
     toNum((cycleData[k] as DbCyclePoint | undefined)?.Biomass, 0),
   );
   const weeklyBiomass = cycleBiomass.length > 0 ? cycleBiomass : [biomass];
+  const cycleExplorer = [...cycleKeys]
+    .sort((a, b) => Number(b) - Number(a))
+    .map((k) => {
+      const node = (cycleData[k] as DbCyclePoint | undefined) ?? {};
+      const key = Number(k);
+      return {
+        key: Number.isFinite(key) ? key : 0,
+        startDate: node.StartDate ?? tree.Cycle?.NewCycleStartDate ?? "--/--/----",
+        endDate: node.EndDate ?? "Current",
+        biomass: +toNum(node.Biomass, 0).toFixed(2),
+        co2Captured: +toNum(node["CO2Captured "], 0).toFixed(2),
+        o2Released: +toNum(node.O2Released, 0).toFixed(2),
+        dates: Array.isArray(node.Date) ? node.Date.map((d) => String(d)) : [],
+        series: {
+          AQI: toNumArray(node.AQI),
+          CO2: toNumArray(node.CO2),
+          PH: toNumArray(node.PH),
+          Temprature: toNumArray(node.Temprature),
+          TDS: toNumArray(node.TDS),
+          ECO2: toNumArray(node.ECO2),
+          TVOC: toNumArray(node.TVOC),
+          LTurbidity: toNumArray(node.LTurbidity),
+          UTurbidity: toNumArray(node.UTurbidity),
+        },
+      };
+    });
 
   const totalCo2 = toNum(tree.Cycle?.TotalCO2Absorbed, toNum(latestCycle?.["CO2Captured "], 0));
   const totalO2 = toNum(tree.Cycle?.TotalO2Released, toNum(latestCycle?.O2Released, 0));
+  const cycleStart = tree.Cycle?.NewCycleStartDate ?? tree.InstallationDate;
+  const cycleRemaining = Math.max(0, 30 - diffDays(cycleStart));
 
   const led1 = toNum(tree.Intensity?.LED1, 0);
   const led2 = toNum(tree.Intensity?.LED2, 0);
@@ -289,9 +380,14 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
   return {
     activeTreeId: tree.DeviceID ?? treeId,
     location: getDisplayLocation(treeId, tree.Location),
+    installationDate: tree.InstallationDate ?? "--/--/----",
     treeCount: noOfDevices,
+    change: toNum(tree.Change, 0),
     batteryPercentage,
     batteryCharging: !!tree.Battery?.Charging,
+    displayPin: tree.DisplayPin != null ? String(tree.DisplayPin) : "----",
+    wifiSsid: tree.WiFi?.SSID ?? "Unknown",
+    wifiPassword: tree.WiFi?.Password ?? "",
     error: hasError,
     lastCheck: fmtDateTime(tree.SensorsData?.LastCheck?.Date, tree.SensorsData?.LastCheck?.Time),
     lastOnline: fmtDateTime(tree.LastOnline?.Date, tree.LastOnline?.Time),
@@ -320,6 +416,10 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
     air: Math.max(0, Math.round(aqiValue * 30)),
     uptime: `${diffDays(tree.LastOnline?.Date)}d`,
     growth,
+    cycleStartDate: cycleStart ?? "--/--/----",
+    cycleEndDate: cycleEndDate(cycleStart),
+    cycleDaysRemaining: cycleRemaining,
+    cycleExplorer,
     ambientTemp: +toNum(sensors.Temprature, 0).toFixed(2),
     humidity: 0,
     lightIntensity: Math.round(avgLed * 100),
@@ -385,9 +485,14 @@ export function useLiveData(treeId: string = DEFAULT_TREE_ID): LiveData {
   const [d, setD] = useState<LiveData>({
     activeTreeId: treeId,
     location: "Loading...",
+    installationDate: "--/--/----",
     treeCount: 0,
+    change: 0,
     batteryPercentage: 0,
     batteryCharging: false,
+    displayPin: "----",
+    wifiSsid: "Unknown",
+    wifiPassword: "",
     error: false,
     lastCheck: "--/--/---- --:--",
     lastOnline: "--/--/---- --:--",
@@ -411,6 +516,10 @@ export function useLiveData(treeId: string = DEFAULT_TREE_ID): LiveData {
     air: 0,
     uptime: "0d",
     growth: 0,
+    cycleStartDate: "--/--/----",
+    cycleEndDate: "--/--/----",
+    cycleDaysRemaining: 0,
+    cycleExplorer: [],
     /* Environment */
     ambientTemp: 0, humidity: 0, lightIntensity: 0,
     co2Ambient: 0, uvIndex: 0, airQuality: 0,

@@ -1918,7 +1918,7 @@ function DashboardPageContent() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    padding: "0",
+                    padding: "8",
                     marginBottom: "10em",
                     marginTop: "-6em",
                   }}

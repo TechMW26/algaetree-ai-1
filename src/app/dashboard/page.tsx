@@ -203,41 +203,37 @@ function AnimBar({ pct, color, delay = 0 }: { pct: number; color: string; delay?
   );
 }
 
-/* ── AQI Circular Meter (reference-style) ── */
-const AQI_BANDS = [
-  { from: 0, to: 5, color: "#66bb6a" },
-  { from: 5, to: 15, color: "#a3c43a" },
-  { from: 15, to: 30, color: "#f3c93a" },
-  { from: 30, to: 50, color: "#f28a1d" },
+/* ── AQI Circular Meter (1–5 device scale) ── */
+const AQI_BANDS_5 = [
+  { from: 0.5, to: 1.5, color: "#10b981" }, // Excellent
+  { from: 1.5, to: 2.5, color: "#22c55e" }, // Good
+  { from: 2.5, to: 3.5, color: "#eab308" }, // Moderate
+  { from: 3.5, to: 4.5, color: "#f97316" }, // Poor
+  { from: 4.5, to: 5.5, color: "#ef4444" }, // Unhealthy
 ] as const;
 
+const AQI_LEVEL_MAP: Record<number, { text: string; color: string }> = {
+  1: { text: "Excellent", color: "#10b981" },
+  2: { text: "Good",      color: "#22c55e" },
+  3: { text: "Moderate",  color: "#eab308" },
+  4: { text: "Poor",      color: "#f97316" },
+  5: { text: "Unhealthy", color: "#ef4444" },
+};
+
+function getAQIDescription(value: number) {
+  const val = Math.round(value);
+  return AQI_LEVEL_MAP[val] ?? { text: String(value), color: "var(--text-2)" };
+}
+
 function AQIGauge({ value }: { value: number }) {
-  const displayValue = Math.max(0, Math.round(value));
-  const dialValue = Math.min(displayValue, 50);
-  const cx = 160;
-  const cy = 152;
-  const r = 112;
-  const sw = 20;
-  const startDeg = 180;
-  const endDeg = 480;
+  const displayValue = Math.max(1, Math.min(5, Math.round(value)));
+  const { text: quality, color: qualityColor } = getAQIDescription(displayValue);
 
-  const quality = displayValue <= 15
-    ? "Good"
-    : displayValue <= 25
-      ? "Moderate"
-      : displayValue <= 40
-        ? "Unhealthy"
-        : "Very Unhealthy";
+  const cx = 160, cy = 152, r = 112, sw = 20;
+  const startDeg = 180, endDeg = 480;
 
-  const qualityColor = displayValue <= 5
-    ? "#66bb6a"
-    : displayValue <= 15
-      ? "#a3c43a"
-      : displayValue <= 30
-        ? "#f3c93a"
-        : displayValue <= 50
-          ? "#f28a1d"
-          : "#b21f0f";
+  // Linear: value 0.5 → 180°, value 5.5 → 480° (each integer value centers in its band)
+  const angleForValue = (v: number) => startDeg + ((v - 0.5) / 5) * (endDeg - startDeg);
 
   const polar = (angleDeg: number, radius: number) => {
     const rad = ((angleDeg - 90) * Math.PI) / 180;
@@ -250,86 +246,50 @@ function AQIGauge({ value }: { value: number }) {
   const arcPath = (fromDeg: number, toDeg: number, radius: number) => {
     const p1 = polar(fromDeg, radius);
     const p2 = polar(toDeg, radius);
-    const delta = toDeg - fromDeg;
-    const largeArc = delta > 180 ? 1 : 0;
+    const largeArc = (toDeg - fromDeg) > 180 ? 1 : 0;
     return `M ${p1.x} ${p1.y} A ${radius} ${radius} 0 ${largeArc} 1 ${p2.x} ${p2.y}`;
   };
 
-  // Non-linear scale to match the reference labels: 0 -> 5 -> 15 -> 50+
-  const angleForValue = (v: number) => {
-    if (v <= 5) {
-      return 180 + (v / 5) * 55;
-    }
-    if (v <= 15) {
-      return 235 + ((v - 5) / 10) * 125;
-    }
-    return 360 + ((Math.min(v, 50) - 15) / 35) * 120;
-  };
+  const bandPath = (from: number, to: number, gap = 2.5) =>
+    arcPath(angleForValue(from) + gap, angleForValue(to) - gap, r);
 
-  const bandPath = (from: number, to: number, gapDeg = 2.8) => {
-    const fromDeg = angleForValue(from) + (from > 0 ? gapDeg : 0);
-    const toDeg = angleForValue(to) - (to < 50 ? gapDeg : 0);
-    return arcPath(fromDeg, toDeg, r);
-  };
-
-  const pointerDeg = angleForValue(dialValue);
+  const pointerDeg = angleForValue(displayValue);
   const pointerDot = polar(pointerDeg, r);
   const pointerTri = polar(pointerDeg, r - 28);
 
-  const p0 = polar(angleForValue(0), r + 28);
-  const p5 = polar(angleForValue(5), r + 28);
-  const p15 = polar(angleForValue(15), r + 28);
-  const p50 = polar(angleForValue(50), r + 28);
-
-  const redTicks = Array.from({ length: 7 }, (_, i) => {
-    const deg = 408 + i * 7;
-    const a = polar(deg, r + 4);
-    const b = polar(deg, r + 20);
-    return { a, b, key: `rt-${i}` };
-  });
-
   return (
     <svg viewBox="0 0 320 360" style={{ width: "100%", display: "block" }}>
-
       {/* Base ring */}
       <path d={arcPath(startDeg, endDeg, r)} fill="none" stroke="var(--track-strong)" strokeWidth={sw} strokeLinecap="round" />
 
       {/* Colored zones */}
-      {AQI_BANDS.map((b, idx) => (
+      {AQI_BANDS_5.map((b, idx) => (
         <path key={`band-${idx}`} d={bandPath(b.from, b.to)} fill="none" stroke={b.color} strokeWidth={sw} strokeLinecap="round" />
       ))}
-      <path d={arcPath(angleForValue(50) + 2.8, endDeg - 1, r)} fill="none" stroke="#b21f0f" strokeWidth={sw} strokeLinecap="round" />
 
-      {/* Critical red hatch marks */}
-      {redTicks.map((t) => (
-        <line key={t.key} x1={t.a.x} y1={t.a.y} x2={t.b.x} y2={t.b.y} stroke="#b21f0f" strokeWidth="2" strokeLinecap="round" />
-      ))}
-
-      {/* Pointer triangle + marker */}
+      {/* Pointer */}
       <g transform={`translate(${pointerTri.x} ${pointerTri.y}) rotate(${pointerDeg - 90})`}>
         <polygon points="0,-7 14,0 0,7" fill="rgba(31,41,55,0.78)" />
       </g>
       <circle cx={pointerDot.x} cy={pointerDot.y} r={4.4} fill="rgba(31,41,55,0.78)" />
 
-      {/* Radial guide lines like reference */}
-      {[0, 5, 15, 50].map((v) => {
+      {/* Guide lines + scale labels */}
+      {[1, 2, 3, 4, 5].map((v) => {
         const deg = angleForValue(v);
         const a = polar(deg, r - sw / 2 - 2);
         const b = polar(deg, r + sw / 2 + 12);
-        return <line key={`guide-${v}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgba(31,41,55,0.45)" strokeWidth="1.2" />;
+        const lp = polar(deg, r + 28);
+        return (
+          <g key={v}>
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgba(31,41,55,0.45)" strokeWidth="1.2" />
+            <text x={lp.x} y={lp.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-2)" }}>{v}</text>
+          </g>
+        );
       })}
-
-      {/* Scale labels */}
-      <text x={p0.x} y={p0.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-2)" }}>0</text>
-      <text x={p5.x} y={p5.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-2)" }}>5</text>
-      <text x={p15.x} y={p15.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-2)" }}>15</text>
-      <text x={p50.x} y={p50.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-2)" }}>50+</text>
 
       {/* Center labels */}
       <text x={cx} y={118} textAnchor="middle" fontSize="11" fontWeight="500" fontFamily="inherit" style={{ fill: "var(--text-2)" }}>Today&apos;s Index</text>
-      <text x={cx} y={141} textAnchor="middle" fontSize="20" fontWeight="500" fontFamily="inherit" style={{ fill: qualityColor }}>{quality}</text>
-      <text x={cx} y={190} textAnchor="middle" fontSize="62" fontWeight="500" fontFamily="inherit" style={{ fill: qualityColor }}>{displayValue}</text>
-
+      <text x={cx} y={158} textAnchor="middle" fontSize="24" fontWeight="600" fontFamily="inherit" style={{ fill: qualityColor }}>{quality}</text>
       <text x={cx} y={322} textAnchor="middle" fontSize="10" fontWeight="600" letterSpacing="3" fontFamily="inherit" style={{ fill: "var(--text-3)" }}>AQI INDEX</text>
     </svg>
   );
@@ -1633,13 +1593,13 @@ function DashboardPageContent() {
                   }}
                 >
                   <Image
-                    src="/perf-card.png"
+                    src="/Performance.png"
                     alt="Performance module"
                     fill
                     className="object-contain"
                     style={{
                       filter: "drop-shadow(0 24px 48px rgba(168,85,247,0.18))",
-                      objectPosition: "center 42%",
+                      objectPosition: "center 12%",
                     }}
                     priority
                   />
@@ -1911,27 +1871,25 @@ function DashboardPageContent() {
                   className="absolute"
                   style={{
                     position: "absolute",
-                    top: 0,
                     inset: 0,
+                    opacity: 1,
                     zIndex: 0,
+                    maskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 68%, rgba(0,0,0,0.25) 86%, rgba(0,0,0,0) 100%)",
+                    WebkitMaskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 68%, rgba(0,0,0,0.25) 86%, rgba(0,0,0,0) 100%)",
                     pointerEvents: "none",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding: "8",
-                    marginBottom: "8em",
-                    marginTop: "-4em",
+                    padding: "0 32px",
                   }}
                 >
-                  <img
-                    src="/System.png"
+                  <Image
+                    src="/System Final.png"
                     alt="System module"
+                    fill
+                    className="object-contain"
                     style={{
-                      maxWidth: "72%",
-                      maxHeight: "72%",
-                      objectFit: "contain",
-                      filter: "drop-shadow(0 24px 48px rgba(251,191,36,0.18))",
+                      filter: "drop-shadow(0 24px 48px rgba(251,191,36,0.2))",
+                      objectPosition: "center 12%",
                     }}
+                    priority
                   />
                 </div>
                 <div
@@ -1940,8 +1898,8 @@ function DashboardPageContent() {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    height: "40%",
-                    background: "linear-gradient(to top, var(--surface) 10%, rgba(255,255,255,0.86) 42%, rgba(255,255,255,0.18) 72%, transparent 100%)",
+                    height: 220,
+                    background: "linear-gradient(to top, #ffffff 0%, #ffffff 55%, transparent 100%)",
                     borderBottomLeftRadius: 24,
                     borderBottomRightRadius: 24,
                     zIndex: 1,
@@ -1952,7 +1910,7 @@ function DashboardPageContent() {
                   style={{
                     position: "absolute",
                     left: "50%",
-                    bottom: 0,
+                    bottom: 12,
                     transform: "translateX(-50%)",
                     zIndex: 2,
                     textAlign: "center",
@@ -1978,7 +1936,6 @@ function DashboardPageContent() {
                         overflow: "hidden",
                         padding: 0,
                         background: "linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(226,232,240,0.18) 100%)",
-                        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 3px rgba(15,23,42,0.12), 0 12px 24px rgba(15,23,42,0.08)",
                       }}
                     >
                       
@@ -2046,7 +2003,6 @@ function DashboardPageContent() {
                       </div>
                     </div>
                   </div>
-                  <span className="">Battery</span>
                 </div>
                     </>
                   );

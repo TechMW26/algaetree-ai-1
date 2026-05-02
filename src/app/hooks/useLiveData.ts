@@ -413,7 +413,7 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
     maint: Math.max(0, 30 - diffDays(tree.SensorsData?.LastCheck?.Date)),
     co2: +totalCo2.toFixed(2),
     o2: +totalO2.toFixed(2),
-    air: Math.max(0, Math.round(aqiValue * 30)),
+    air: aqiValue,
     uptime: `${diffDays(tree.LastOnline?.Date)}d`,
     growth,
     cycleStartDate: cycleStart ?? "--/--/----",

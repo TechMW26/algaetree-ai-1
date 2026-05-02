@@ -496,6 +496,29 @@ function RoundKnob({
     document.addEventListener("mouseup", upHandler);
   };
 
+  const startTouch = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (busy) return;
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pts  = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+
+    const moveHandler = (ev: TouchEvent) => {
+      ev.preventDefault();
+      const touch = ev.touches[0];
+      if (!touch) return;
+      const deg      = getDeg(touch.clientX, touch.clientY, pts);
+      const nextValue = Math.floor(((deg - startAngle) * (max - min)) / (endAngle - startAngle) + min);
+      applyValue(nextValue);
+    };
+    const endHandler = () => {
+      document.removeEventListener("touchmove", moveHandler);
+      document.removeEventListener("touchend", endHandler);
+      onCommit();
+    };
+    document.addEventListener("touchmove", moveHandler, { passive: false });
+    document.addEventListener("touchend", endHandler);
+  };
+
   // Build tick positions using SVG-style polar math so they perfectly circle the knob.
   const ticks = useMemo<Array<{ active: boolean; cx: number; cy: number; deg: number }>>(() => {
     const cx = totalSize / 2;
@@ -550,6 +573,7 @@ function RoundKnob({
           {/* Metallic knob disk, centered in the wrapper */}
           <div
             onMouseDown={startDrag}
+            onTouchStart={startTouch}
             style={{
               position: "absolute",
               left: cx - knobSize / 2,
@@ -1100,7 +1124,7 @@ function DashboardPageContent() {
           willChange: "transform",
         }}
       >
-    <div className="h-screen flex flex-col" style={{ background: "var(--bg)", minHeight: "100vh", height: "100vh" }}>
+    <div className="h-screen dash-fullscreen flex flex-col" style={{ background: "var(--bg)", minHeight: "100vh", height: "100vh" }}>
       {/* Ambient BG */}
       <div className="ambient-bg">
         <div className="orb orb-1" />

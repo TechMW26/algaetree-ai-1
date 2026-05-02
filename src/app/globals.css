@@ -75,6 +75,17 @@
   ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 99px; }
 }
 
+/* ===== FULL-SCREEN LAYOUT (100dvh) ===== */
+/* dvh = dynamic viewport height: shrinks as mobile browser chrome appears/hides.  */
+/* This eliminates the "dead space at bottom" on iOS Safari / Android Chrome.      */
+.dash-fullscreen {
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  overflow: hidden !important;
+}
+
 /* ===== KEYFRAMES (outside layers for global availability) ===== */
 @keyframes drift {
   0%, 100% { transform: translate(0, 0) scale(1); }

@@ -1940,7 +1940,7 @@ function DashboardPageContent() {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    height: 220,
+                    height: "40%",
                     background: "linear-gradient(to top, var(--surface) 10%, rgba(255,255,255,0.86) 42%, rgba(255,255,255,0.18) 72%, transparent 100%)",
                     borderBottomLeftRadius: 24,
                     borderBottomRightRadius: 24,
@@ -1952,7 +1952,7 @@ function DashboardPageContent() {
                   style={{
                     position: "absolute",
                     left: "50%",
-                    bottom: 26,
+                    bottom: 0,
                     transform: "translateX(-50%)",
                     zIndex: 2,
                     textAlign: "center",

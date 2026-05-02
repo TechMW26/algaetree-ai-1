@@ -412,6 +412,7 @@ function RoundKnob({
   glowStrength = 0,
   glowColor = "#22c55e",
   variant = "large",
+  framed = true,
   busy,
   onChange,
   onCommit,
@@ -426,6 +427,7 @@ function RoundKnob({
   glowStrength?: number;
   glowColor?: string;
   variant?: "small" | "large";
+  framed?: boolean;
   busy?: boolean;
   onChange: (v: number) => void;
   onCommit: () => void;
@@ -452,15 +454,36 @@ function RoundKnob({
   const fullAngle  = 270;
   const startAngle = (360 - fullAngle) / 2;   // 45°
   const endAngle   = startAngle + fullAngle;   // 315°
-  const numTicks   = isSmall ? 24 : 32;
-  const tickLen    = Math.max(8, Math.round(knobSize * 0.09));
-  const tickInner  = knobSize / 2 + Math.round(knobSize * 0.05);
-  const tickOuter  = tickInner + tickLen;
-  const totalSize  = Math.ceil(tickOuter * 2 + 8);
+  const trackWidth = 2;
+  const trackRadius = knobSize / 2 + Math.round(knobSize * 0.11);
+  const totalSize  = Math.ceil(trackRadius * 2 + trackWidth * 6);
+  const cx = totalSize / 2;
+  const cy = totalSize / 2;
 
   const currentDeg = Math.floor(
     ((value - min) * (endAngle - startAngle)) / Math.max(1, max - min) + startAngle,
   );
+  const activeSweep = clampNumber(currentDeg - startAngle, 0, fullAngle);
+  const activeRatio = clampNumber(activeSweep / fullAngle, 0, 1);
+
+  const pointAtDeg = (deg: number, radius: number) => {
+    const rad = (deg * Math.PI) / 180;
+    return {
+      x: cx - radius * Math.sin(rad),
+      y: cy + radius * Math.cos(rad),
+    };
+  };
+
+  const arcPath = (startDeg: number, sweepDeg: number, radius: number) => {
+    if (sweepDeg <= 0) return "";
+    const endDeg = startDeg + sweepDeg;
+    const s = pointAtDeg(startDeg, radius);
+    const e = pointAtDeg(endDeg, radius);
+    const largeArc = sweepDeg > 180 ? 1 : 0;
+    return `M ${s.x} ${s.y} A ${radius} ${radius} 0 ${largeArc} 1 ${e.x} ${e.y}`;
+  };
+
+  const fullTrackPath = arcPath(startAngle, fullAngle, trackRadius);
 
   const applyValue = (next: number) => {
     const snapped = Math.round(next / step) * step;
@@ -519,55 +542,50 @@ function RoundKnob({
     document.addEventListener("touchend", endHandler);
   };
 
-  // Build tick positions using SVG-style polar math so they perfectly circle the knob.
-  const ticks = useMemo<Array<{ active: boolean; cx: number; cy: number; deg: number }>>(() => {
-    const cx = totalSize / 2;
-    const cy = totalSize / 2;
-    return Array.from({ length: numTicks + 1 }, (_, i) => {
-      const deg    = startAngle + (i / numTicks) * fullAngle;
-      const active = deg <= currentDeg;
-      return { active, cx, cy, deg };
-    });
-  }, [totalSize, numTicks, startAngle, fullAngle, currentDeg]);
-
-  const cx = totalSize / 2;
-  const cy = totalSize / 2;
-
   return (
-    <div ref={cardRef} className="rounded-xl" style={{ padding: "10px 12px", background: "linear-gradient(150deg, rgba(15,23,42,0.08), rgba(255,255,255,0.06)), var(--surface)", border: "1px solid var(--border)", boxShadow: "0 10px 24px rgba(2,6,23,0.14), inset 0 1px 0 rgba(255,255,255,0.22)", position: "relative" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <span style={{ fontSize: 10, fontWeight: 800, color: "var(--text-2)", letterSpacing: "0.02em" }}>{label}</span>
-        <span style={{ fontSize: 10, color: accent, fontWeight: 800 }}>{value}{unit ? ` ${unit}` : ""}</span>
-      </div>
-
+    <div
+      ref={cardRef}
+      className={isSmall || !framed ? "" : "rounded-xl"}
+      style={
+        isSmall || !framed
+          ? { padding: "2px 4px", position: "relative" }
+          : {
+              padding: "10px 12px",
+              background: "linear-gradient(150deg, rgba(15,23,42,0.08), rgba(255,255,255,0.06)), var(--surface)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 10px 24px rgba(2,6,23,0.14), inset 0 1px 0 rgba(255,255,255,0.22)",
+              position: "relative",
+            }
+      }
+    >
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
-        {/* SVG tick ring */}
+        {/* Continuous curved dial track */}
         <div style={{ position: "relative", width: totalSize, height: totalSize, flexShrink: 0 }}>
           <svg
             width={totalSize}
             height={totalSize}
             style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
           >
-            {ticks.map((tick, i) => {
-              // CSS rotate(θ) on a downward tick: tip = (cx - r·sinθ, cy + r·cosθ)
-              // startAngle=45° → lower-left (7 o'clock, min), endAngle=315° → lower-right (5 o'clock, max)
-              // Sweep is clockwise from lower-left through top to lower-right.
-              const rad    = (tick.deg * Math.PI) / 180;
-              const x1     = cx - tickInner * Math.sin(rad);
-              const y1     = cy + tickInner * Math.cos(rad);
-              const x2     = cx - tickOuter * Math.sin(rad);
-              const y2     = cy + tickOuter * Math.cos(rad);
-              return (
-                <line
-                  key={`${label}-tick-${i}`}
-                  x1={x1} y1={y1} x2={x2} y2={y2}
-                  stroke={tick.active ? accent : "rgba(30,40,60,0.55)"}
-                  strokeWidth={tick.active ? 2.5 : 2}
-                  strokeLinecap="round"
-                  style={{ filter: tick.active ? `drop-shadow(0 0 3px ${accent})` : "none", transition: "stroke 0.1s ease" }}
-                />
-              );
-            })}
+            <path
+              d={fullTrackPath}
+              fill="none"
+              stroke="rgba(30,40,60,0.45)"
+              strokeWidth={trackWidth}
+              strokeLinecap="round"
+              pathLength={1}
+            />
+            {activeRatio > 0 ? (
+              <path
+                d={fullTrackPath}
+                fill="none"
+                stroke={accent}
+                strokeWidth={trackWidth}
+                strokeLinecap="round"
+                pathLength={1}
+                strokeDasharray={`${activeRatio} 1`}
+                style={{ filter: `drop-shadow(0 0 4px ${accent})`, transition: "stroke-dasharray 0.08s linear" }}
+              />
+            ) : null}
           </svg>
 
           {/* Metallic knob disk, centered in the wrapper */}
@@ -644,6 +662,12 @@ function RoundKnob({
             </div>
           </div>
         </div>
+      </div>
+
+      <div style={{ marginTop: isSmall ? 6 : 8, textAlign: "center" }}>
+        <span style={{ fontSize: isSmall ? 11 : 12, fontWeight: 800, color: "var(--text-2)", letterSpacing: "0.02em" }}>
+          {label}
+        </span>
       </div>
     </div>
   );
@@ -1078,7 +1102,7 @@ function DashboardPageContent() {
     { id: "flow", label: "Flow Control" },
     { id: "lighting", label: "Lighting Control" },
     { id: "algae", label: "Algae System" },
-    { id: "settings", label: "System Settings" },
+    { id: "settings", label: "System Info" },
   ];
   const tabIcons = [
     <svg key="t0" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.43A2 2 0 0 1 14 9.53V2"/><path d="M8.5 2h7"/></svg>,
@@ -1853,14 +1877,14 @@ function DashboardPageContent() {
             <motion.div
               className="card flex flex-col dash-hero"
               style={{
-                padding: 22, gridRow: "1 / 3",
+                padding: 32, gridRow: "1 / 3",
                 background: "var(--surface)",
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 ['--card-tint' as any]: 'rgba(251,191,36,0.12)',
               }}
               variants={rise}
             >
-              <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 24 }}>
                 <div className="flex items-center" style={{ gap: 12 }}>
                   <div className="rounded-2xl flex items-center justify-center" style={{ width: 48, height: 48, background: "rgba(251,191,36,0.1)" }}>
                     <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
@@ -1869,110 +1893,129 @@ function DashboardPageContent() {
                 </div>
                 <Badge label={d.networkUp ? "Online" : "Offline"} color={d.networkUp ? "green" : "orange"} />
               </div>
-              <div className="grid" style={{ gridTemplateColumns: "minmax(0, 180px) minmax(0, 1fr)", gap: 10, marginBottom: 10, alignItems: "stretch" }}>
-                <div className="rounded-2xl flex flex-col items-center justify-center" style={{ padding: "16px 12px", border: "1px solid rgba(251,191,36,0.18)", background: "linear-gradient(155deg, rgba(251,191,36,0.14), rgba(255,255,255,0.9))", gap: 4 }}>
-                  <motion.p className="font-black text-amber-400 leading-none" style={{ fontSize: "3.25rem", filter: "drop-shadow(0 0 28px rgba(251,191,36,0.24))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.sensorHealth}%</motion.p>
-                  <p className="font-bold uppercase tracking-[0.24em]" style={{ fontSize: 10, color: "var(--text-3)" }}>Sensor Health</p>
+              <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative", overflow: "hidden", marginTop: 4 }}>
+                {(() => {
+                  const batteryPercentage = Math.max(0, Math.min(100, Number(d.batteryPercentage ?? 0)));
+                  const batteryFill = batteryPercentage >= 70
+                    ? "linear-gradient(90deg, #22c55e 0%, #4ade80 100%)"
+                    : batteryPercentage >= 45
+                      ? "linear-gradient(90deg, #eab308 0%, #facc15 100%)"
+                      : batteryPercentage >= 20
+                        ? "linear-gradient(90deg, #f97316 0%, #fb923c 100%)"
+                        : "linear-gradient(90deg, #ef4444 0%, #f87171 100%)";
+
+                  return (
+                    <>
+                <div
+                  className="absolute"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    inset: 0,
+                    zIndex: 0,
+                    pointerEvents: "none",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "8px 20px 18px",
+                    marginBottom: "8em",
+                    marginTop: "-4em",
+                  }}
+                >
+                  <img
+                    src="/System.png"
+                    alt="System module"
+                    style={{
+                      maxWidth: "72%",
+                      maxHeight: "72%",
+                      objectFit: "contain",
+                      filter: "drop-shadow(0 24px 48px rgba(251,191,36,0.18))",
+                    }}
+                  />
                 </div>
-                <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
-                  {[
-                    { l: "CPU TEMP", v: `${d.cpuTemp}°C` },
-                    { l: "CPU USAGE", v: `${d.cpuUsage}%` },
-                    { l: "MEMORY", v: `${d.memUsage}%` },
-                    { l: "DEVICE", v: d.activeTreeId },
-                    { l: "LAST ONLINE", v: d.lastOnline },
-                    { l: "LAST CHECK", v: d.lastCheck },
-                  ].map((s) => (
-                    <div key={s.l} className="rounded-xl" style={{ padding: "10px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)", minWidth: 0 }}>
-                      <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 8, color: "var(--text-3)" }}>{s.l}</p>
-                      <p className="font-bold" style={{ fontSize: 12, marginTop: 3, overflowWrap: "anywhere", lineHeight: 1.2 }}>{s.v}</p>
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 220,
+                    background: "linear-gradient(to top, var(--surface) 10%, rgba(255,255,255,0.86) 42%, rgba(255,255,255,0.18) 72%, transparent 100%)",
+                    borderBottomLeftRadius: 24,
+                    borderBottomRightRadius: 24,
+                    zIndex: 1,
+                    pointerEvents: "none",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    left: "50%",
+                    bottom: 26,
+                    transform: "translateX(-50%)",
+                    zIndex: 2,
+                    textAlign: "center",
+                    minWidth: 280,
+                    width: "min(78%, 380px)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 12,
+                  }}
+                >
+                  <motion.p className="font-black text-amber-400 leading-none" style={{ fontSize: "4.5rem", filter: "drop-shadow(0 0 40px rgba(251,191,36,0.28))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.sensorHealth}%</motion.p>
+                  <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)", marginTop: 0 }}>Sensor Health</p>
+                  <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div className="flex items-center justify-between" style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--text-3)", padding: "0 2px" }}>
+                      <span className="font-bold">Battery</span>
+                      <span className="font-bold" style={{ color: "var(--text)" }}>{batteryPercentage}%</span>
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2" style={{ gap: 8, marginTop: 0 }}>
-                {[
-                  { l: "Battery", v: `${d.batteryPercentage}%`, color: "#4ade80" },
-                  { l: "Charging", v: d.batteryCharging ? "Yes" : "No", color: "#38bdf8" },
-                  { l: "Network", v: d.networkUp ? "Connected" : "Disconnected", color: d.networkUp ? "#4ade80" : "#f97316" },
-                  { l: "Error Flag", v: d.error ? "True" : "False", color: d.error ? "#f97316" : "#a855f7" },
-                ].map((item) => (
-                  <div key={item.l} className="rounded-xl flex items-center justify-between" style={{ padding: "8px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
-                    <span style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 600 }}>{item.l}</span>
-                    <div className="flex items-center" style={{ gap: 6 }}>
-                      <span style={{ fontSize: 11, color: item.color, fontWeight: 700 }}>{item.v}</span>
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: item.color }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-2" style={{ gap: 8, marginTop: 8 }}>
-                {[
-                  { l: "Change Node", v: String(d.change) },
-                  { l: "Display Pin", v: d.displayPin },
-                  { l: "WiFi SSID", v: d.wifiSsid },
-                  { l: "Install Date", v: d.installationDate },
-                ].map((item) => (
-                  <div key={item.l} className="rounded-xl" style={{ padding: "8px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
-                    <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.l}</p>
-                    <p style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 700, marginTop: 3, overflowWrap: "anywhere", lineHeight: 1.2 }}>{item.v}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-3" style={{ gap: 8, marginTop: 8 }}>
-                {[
-                  { l: "Cycle Start", v: d.cycleStartDate },
-                  { l: "Cycle End", v: d.cycleEndDate },
-                  { l: "Days Remaining", v: `${d.cycleDaysRemaining} Days` },
-                ].map((item) => (
-                  <div key={item.l} className="rounded-xl" style={{ padding: "8px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
-                    <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.l}</p>
-                    <p style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 700, marginTop: 3, lineHeight: 1.2 }}>{item.v}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="rounded-2xl" style={{ marginTop: 8, padding: 10, border: "1px solid rgba(244,63,94,0.25)", background: "rgba(244,63,94,0.06)" }}>
-                <div className="flex items-center justify-between" style={{ marginBottom: specificErrors.length > 0 ? 8 : 0 }}>
-                  <p style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700, color: specificErrors.length > 0 ? "#e11d48" : "#16a34a" }}>
-                    Diagnostics
-                  </p>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)" }}>{specificErrors.length > 0 ? "Attention" : "Optimal"}</span>
-                </div>
-                {specificErrors.length > 0 ? (
-                  <div className="grid grid-cols-2" style={{ gap: 8 }}>
-                    {specificErrors.map((name) => (
-                      <div key={name} className="rounded-xl" style={{ padding: "7px 9px", border: "1px solid rgba(244,63,94,0.25)", background: "rgba(244,63,94,0.08)", color: "#e11d48", fontSize: 10, fontWeight: 700 }}>
-                        Sensor mismatch: {name}
+                    <div
+                      style={{
+                        position: "relative",
+                        width: "100%",
+                        height: 22,
+                        borderRadius: 999,
+                        overflow: "hidden",
+                        background: "rgba(15,23,42,0.12)",
+                        border: "1px solid rgba(148,163,184,0.22)",
+                        boxShadow: "inset 0 1px 3px rgba(15,23,42,0.14)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          width: `${batteryPercentage}%`,
+                          minWidth: batteryPercentage > 0 ? 28 : 0,
+                          borderRadius: 999,
+                          background: batteryFill,
+                          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28), 0 0 18px rgba(248,250,252,0.12)",
+                          transition: "width 240ms ease, background 240ms ease",
+                        }}
+                      />
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                          mixBlendMode: "multiply",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        {batteryPercentage}%
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "#15803d" }}>System optimal. No active sensor mismatch.</p>
-                )}
-              </div>
-
-              <div className="rounded-2xl" style={{ marginTop: 8, padding: 10, border: "1px solid rgba(148,163,184,0.22)", background: "linear-gradient(150deg, rgba(2,132,199,0.08), rgba(2,6,23,0.1))" }}>
-                <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-                  <p style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700, color: "#38bdf8" }}>LDR Sensor Matrix</p>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)" }}>Live</span>
-                </div>
-                <div className="grid grid-cols-4" style={{ gap: 8 }}>
-                  {([
-                    { k: "LDR1", v: d.ldrStatus.LDR1 },
-                    { k: "LDR2", v: d.ldrStatus.LDR2 },
-                    { k: "LDR3", v: d.ldrStatus.LDR3 },
-                    { k: "LDR4", v: d.ldrStatus.LDR4 },
-                  ] as const).map((ldr) => (
-                    <div key={ldr.k} className="rounded-xl" style={{ padding: "8px 8px", border: "1px solid rgba(148,163,184,0.22)", background: "rgba(15,23,42,0.12)", textAlign: "center" }}>
-                      <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 700 }}>{ldr.k}</p>
-                      <p style={{ fontSize: 11, fontWeight: 800, color: ldr.v ? "#22c55e" : "#94a3b8", letterSpacing: "0.04em" }}>{ldr.v ? "LIGHT" : "DARK"}</p>
                     </div>
-                  ))}
+                  </div>
                 </div>
+                    </>
+                  );
+                })()}
               </div>
             </motion.div>
 
@@ -2086,7 +2129,7 @@ function DashboardPageContent() {
                       </div>
                     </div>
 
-                    <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                    <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginTop: "auto" }}>
                       <RoundKnob
                         label="Bubble ON"
                         value={uiAirBubblesTiming.on}
@@ -2095,6 +2138,7 @@ function DashboardPageContent() {
                         unit="min"
                         accent="#38bdf8"
                         variant="large"
+                        framed={false}
                         busy={controlBusy}
                         onChange={(v) => updateBubblesTimingDraft("on", v)}
                         onCommit={() => { void commitBubblesTiming("on"); }}
@@ -2107,6 +2151,7 @@ function DashboardPageContent() {
                         unit="min"
                         accent="#22c55e"
                         variant="large"
+                        framed={false}
                         busy={controlBusy}
                         onChange={(v) => updateBubblesTimingDraft("off", v)}
                         onCommit={() => { void commitBubblesTiming("off"); }}
@@ -2167,20 +2212,18 @@ function DashboardPageContent() {
                       ))}
                     </div>
 
-                    <div className="rounded-xl" style={{ border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(15,23,42,0.08), rgba(255,255,255,0.06)), var(--surface)", boxShadow: "0 10px 24px rgba(2,6,23,0.14), inset 0 1px 0 rgba(255,255,255,0.22)", padding: "10px 12px" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
-                        <RoundKnob label="Brightness 1" value={ledDraft.LED1} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED1 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED1: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED1"]); }} />
-                        <RoundKnob label="Brightness 2" value={ledDraft.LED2} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED2 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED2: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED2"]); }} />
-                        <RoundKnob label="Brightness 3" value={ledDraft.LED3} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED3 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED3: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED3"]); }} />
-                        <RoundKnob label="Brightness 4" value={ledDraft.LED4} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED4 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED4: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED4"]); }} />
-                      </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8, marginTop: "auto" }}>
+                      <RoundKnob label="Brightness 1" value={ledDraft.LED1} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED1 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED1: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED1"]); }} />
+                      <RoundKnob label="Brightness 2" value={ledDraft.LED2} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED2 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED2: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED2"]); }} />
+                      <RoundKnob label="Brightness 3" value={ledDraft.LED3} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED3 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED3: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED3"]); }} />
+                      <RoundKnob label="Brightness 4" value={ledDraft.LED4} min={0} max={255} accent="#22c55e" glowColor="#22c55e" glowStrength={ledDraft.LED4 / 255} variant="small" busy={controlBusy} onChange={(v) => setLedDraft((p) => ({ ...p, LED4: v }))} onCommit={() => { void commitIntensity(ledDraft, ["LED4"]); }} />
                     </div>
                   </div>
                 )}
 
                 {controlPanelTab === "algae" && (
                   <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(34,197,94,0.12), rgba(22,163,74,0.05))", display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "flex-start", gap: 10 }}>
                       {([
                         "Motor1Volume",
                         "Motor2Volume",
@@ -2188,22 +2231,24 @@ function DashboardPageContent() {
                         "Motor4Volume",
                         "Motor5Volume",
                       ] as const).map((k, idx) => (
-                        <RoundKnob
-                          key={k}
-                          label={`Dosing M${idx + 1}`}
-                          value={nutritionDraft[k]}
-                          min={0}
-                          max={255}
-                          unit="ml"
-                          accent="#22c55e"
-                          variant="large"
-                          busy={controlBusy}
-                          onChange={(v) => setNutritionDraft((p) => ({ ...p, [k]: v }))}
-                          onCommit={() => { void commitNutrition(); }}
-                        />
+                        <div key={k} style={{ flex: "0 1 calc(33.333% - 10px)", maxWidth: "calc(33.333% - 10px)", minWidth: 260 }}>
+                          <RoundKnob
+                            label={`Dosing M${idx + 1}`}
+                            value={nutritionDraft[k]}
+                            min={0}
+                            max={255}
+                            unit="ml"
+                            accent="#22c55e"
+                            variant="large"
+                            framed={false}
+                            busy={controlBusy}
+                            onChange={(v) => setNutritionDraft((p) => ({ ...p, [k]: v }))}
+                            onCommit={() => { void commitNutrition(); }}
+                          />
+                        </div>
                       ))}
                     </div>
-                    <div className="flex" style={{ gap: 8, justifyContent: "flex-end" }}>
+                    <div className="flex" style={{ gap: 8, justifyContent: "center" }}>
                       <button
                         type="button"
                         className="cursor-pointer"
@@ -2221,14 +2266,94 @@ function DashboardPageContent() {
                   <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(148,163,184,0.14), rgba(30,41,59,0.06))", display: "flex", flexDirection: "column", gap: 12 }}>
                     <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
                       {[
-                        { l: "Change Node", v: String(d.change) },
                         { l: "Cooldown", v: cooldownLeftSec > 0 ? `${cooldownLeftSec}s` : "Ready" },
                         { l: "Sync State", v: controlBusy ? "Syncing" : "Idle" },
                         { l: "LED Avg", v: String(masterLedValue) },
+                        { l: "Diagnostics", v: specificErrors.length > 0 ? `Attention (${specificErrors.length})` : "Optimal" },
+                        { l: "WiFi SSID", v: d.wifiSsid },
+                        { l: "Install Date", v: d.installationDate },
                       ].map((item) => (
                         <div key={item.l} className="rounded-xl" style={{ padding: "9px 10px", border: "1px solid var(--border)", background: "var(--mini-bg)" }}>
                           <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em" }}>{item.l}</p>
                           <p style={{ fontSize: 12, color: "var(--text-2)", fontWeight: 800, marginTop: 4, overflowWrap: "anywhere" }}>{item.v}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                      {[
+                        { l: "CPU TEMP", v: `${d.cpuTemp}°C` },
+                        { l: "CPU USAGE", v: `${d.cpuUsage}%` },
+                        { l: "MEMORY", v: `${d.memUsage}%` },
+                        { l: "DEVICE", v: d.activeTreeId },
+                        { l: "LAST ONLINE", v: d.lastOnline },
+                        { l: "LAST CHECK", v: d.lastCheck },
+                      ].map((item) => (
+                        <div key={item.l} className="rounded-xl" style={{ padding: "9px 10px", border: "1px solid var(--border)", background: "var(--mini-bg)", minWidth: 0 }}>
+                          <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em" }}>{item.l}</p>
+                          <p style={{ fontSize: 12, color: "var(--text-2)", fontWeight: 800, marginTop: 4, overflowWrap: "anywhere", lineHeight: 1.2 }}>{item.v}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-2" style={{ gap: 8 }}>
+                      {[
+                        { l: "Battery", v: `${d.batteryPercentage}%`, color: "#4ade80" },
+                        { l: "Charging", v: d.batteryCharging ? "Yes" : "No", color: "#38bdf8" },
+                        { l: "Network", v: d.networkUp ? "Connected" : "Disconnected", color: d.networkUp ? "#4ade80" : "#f97316" },
+                        { l: "Error Flag", v: d.error ? "True" : "False", color: d.error ? "#f97316" : "#a855f7" },
+                      ].map((item) => (
+                        <div key={item.l} className="rounded-xl flex items-center justify-between" style={{ padding: "8px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
+                          <span style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 600 }}>{item.l}</span>
+                          <div className="flex items-center" style={{ gap: 6 }}>
+                            <span style={{ fontSize: 11, color: item.color, fontWeight: 700 }}>{item.v}</span>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: item.color }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="rounded-2xl" style={{ padding: 10, border: "1px solid rgba(148,163,184,0.22)", background: "linear-gradient(150deg, rgba(2,132,199,0.08), rgba(2,6,23,0.1))" }}>
+                      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                        <p style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700, color: "#38bdf8" }}>LDR Sensor Matrix</p>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)" }}>Live</span>
+                      </div>
+                      <div className="grid grid-cols-4" style={{ gap: 8 }}>
+                        {([
+                          { k: "LDR1", v: d.ldrStatus.LDR1 },
+                          { k: "LDR2", v: d.ldrStatus.LDR2 },
+                          { k: "LDR3", v: d.ldrStatus.LDR3 },
+                          { k: "LDR4", v: d.ldrStatus.LDR4 },
+                        ] as const).map((ldr) => (
+                          <div key={ldr.k} className="rounded-xl" style={{ padding: "8px 8px", border: "1px solid rgba(148,163,184,0.22)", background: "rgba(15,23,42,0.12)", textAlign: "center" }}>
+                            <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 700 }}>{ldr.k}</p>
+                            <p style={{ fontSize: 11, fontWeight: 800, color: ldr.v ? "#22c55e" : "#94a3b8", letterSpacing: "0.04em" }}>{ldr.v ? "LIGHT" : "DARK"}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2" style={{ gap: 8 }}>
+                      {[
+                        { l: "Change Node", v: String(d.change) },
+                        { l: "Display Pin", v: d.displayPin },
+                      ].map((item) => (
+                        <div key={item.l} className="rounded-xl" style={{ padding: "8px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
+                          <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.l}</p>
+                          <p style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 700, marginTop: 3, overflowWrap: "anywhere", lineHeight: 1.2 }}>{item.v}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-3" style={{ gap: 8 }}>
+                      {[
+                        { l: "Cycle Start", v: d.cycleStartDate },
+                        { l: "Cycle End", v: d.cycleEndDate },
+                        { l: "Days Remaining", v: `${d.cycleDaysRemaining} Days` },
+                      ].map((item) => (
+                        <div key={item.l} className="rounded-xl" style={{ padding: "8px 10px", background: "var(--mini-bg)", border: "1px solid var(--border)" }}>
+                          <p style={{ fontSize: 9, color: "var(--text-3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.l}</p>
+                          <p style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 700, marginTop: 3, lineHeight: 1.2 }}>{item.v}</p>
                         </div>
                       ))}
                     </div>

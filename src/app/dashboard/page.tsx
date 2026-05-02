@@ -1096,12 +1096,9 @@ function DashboardPageContent() {
           </svg>
         </div>
         <div>
-          <p style={{ fontSize: 20, fontWeight: 800, color: "var(--text-1, #0f172a)", marginBottom: 8 }}>Desktop Required</p>
+          <p style={{ fontSize: 20, fontWeight: 800, color: "var(--text-1, #0f172a)", marginBottom: 8 }}>Incompatible Device</p>
           <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-2, #475569)", lineHeight: 1.6, maxWidth: 320 }}>
-            The AlgaeTree AI dashboard is designed for landscape screens with a minimum width of 1024px.
-          </p>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-3, #94a3b8)", marginTop: 10, lineHeight: 1.6, maxWidth: 320 }}>
-            Please switch to a desktop or laptop, or rotate your device to landscape mode.
+            This dashboard is not supported on your current device or screen size.
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 12, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>

@@ -2077,10 +2077,10 @@ function DashboardPageContent() {
                 {controlPanelTab === "flow" && (
                   <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(15,23,42,0.08), rgba(56,189,248,0.04))", display: "flex", flexDirection: "column", gap: 12 }}>
                     <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-                      <ToggleChip label="Filling" enabled={uiOperations.Filling} busy={controlBusy} onToggle={() => { void toggleFluidOperation("Filling"); }} />
+                      <ToggleChip label="Refilling" enabled={uiOperations.Filling} busy={controlBusy} onToggle={() => { void toggleFluidOperation("Filling"); }} />
                       <ToggleChip label="Drain" enabled={uiOperations.Drain} busy={controlBusy} onToggle={() => { void toggleFluidOperation("Drain"); }} />
-                      <ToggleChip label="Fan" enabled={uiOperations.Fan} busy={controlBusy} onToggle={() => { void toggleOperation("Fan"); }} />
-                      <ToggleChip label="Air Bubbles" enabled={uiOperations.AirBubbles} busy={controlBusy} onToggle={() => { void toggleOperation("AirBubbles"); }} />
+                      <ToggleChip label="Air Purification" enabled={uiOperations.Fan} busy={controlBusy} onToggle={() => { void toggleOperation("Fan"); }} />
+                      <ToggleChip label="Oxygen Infusion" enabled={uiOperations.AirBubbles} busy={controlBusy} onToggle={() => { void toggleOperation("AirBubbles"); }} />
                       <div style={{ gridColumn: "1 / -1" }}>
                         <ToggleChip label="Solar Cleaning" enabled={uiOperations.SolarCleaning} busy={controlBusy} onToggle={() => { void toggleOperation("SolarCleaning"); }} />
                       </div>

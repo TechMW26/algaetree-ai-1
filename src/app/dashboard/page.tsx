@@ -229,10 +229,12 @@ function AQIGauge({ value }: { value: number }) {
   const displayValue = Math.max(1, Math.min(5, Math.round(value)));
   const { text: quality, color: qualityColor } = getAQIDescription(displayValue);
 
-  const cx = 160, cy = 152, r = 112, sw = 20;
-  const startDeg = 180, endDeg = 480;
+  // Classic 270° horseshoe: lower-left → over top → lower-right
+  // This keeps all 5 band labels symmetrically within the SVG bounds.
+  const cx = 190, cy = 170, r = 116, sw = 22;
+  const startDeg = 225, endDeg = 495;
 
-  // Linear: value 0.5 → 180°, value 5.5 → 480° (each integer value centers in its band)
+  // Band centers: 1→252°, 2→306°, 3→360°(top), 4→414°, 5→468°
   const angleForValue = (v: number) => startDeg + ((v - 0.5) / 5) * (endDeg - startDeg);
 
   const polar = (angleDeg: number, radius: number) => {
@@ -250,47 +252,56 @@ function AQIGauge({ value }: { value: number }) {
     return `M ${p1.x} ${p1.y} A ${radius} ${radius} 0 ${largeArc} 1 ${p2.x} ${p2.y}`;
   };
 
-  const bandPath = (from: number, to: number, gap = 2.5) =>
+  // Each band gets a 3.5° inset gap on each side for clean separation
+  const bandPath = (from: number, to: number, gap = 3.5) =>
     arcPath(angleForValue(from) + gap, angleForValue(to) - gap, r);
 
   const pointerDeg = angleForValue(displayValue);
   const pointerDot = polar(pointerDeg, r);
-  const pointerTri = polar(pointerDeg, r - 28);
+  const pointerTri = polar(pointerDeg, r - 30);
 
   return (
-    <svg viewBox="0 0 320 360" style={{ width: "100%", display: "block" }}>
+    <svg viewBox="0 0 380 330" style={{ width: "100%", display: "block" }}>
       {/* Base ring */}
       <path d={arcPath(startDeg, endDeg, r)} fill="none" stroke="var(--track-strong)" strokeWidth={sw} strokeLinecap="round" />
 
-      {/* Colored zones */}
+      {/* Colored bands */}
       {AQI_BANDS_5.map((b, idx) => (
         <path key={`band-${idx}`} d={bandPath(b.from, b.to)} fill="none" stroke={b.color} strokeWidth={sw} strokeLinecap="round" />
       ))}
 
-      {/* Pointer */}
-      <g transform={`translate(${pointerTri.x} ${pointerTri.y}) rotate(${pointerDeg - 90})`}>
-        <polygon points="0,-7 14,0 0,7" fill="rgba(31,41,55,0.78)" />
-      </g>
-      <circle cx={pointerDot.x} cy={pointerDot.y} r={4.4} fill="rgba(31,41,55,0.78)" />
-
-      {/* Guide lines + scale labels */}
-      {[1, 2, 3, 4, 5].map((v) => {
+      {/* White divider ticks at band boundaries */}
+      {[1.5, 2.5, 3.5, 4.5].map((v) => {
         const deg = angleForValue(v);
-        const a = polar(deg, r - sw / 2 - 2);
-        const b = polar(deg, r + sw / 2 + 12);
-        const lp = polar(deg, r + 28);
+        const inner = polar(deg, r - sw / 2 - 1);
+        const outer = polar(deg, r + sw / 2 + 1);
         return (
-          <g key={v}>
-            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgba(31,41,55,0.45)" strokeWidth="1.2" />
-            <text x={lp.x} y={lp.y + 4} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: "var(--text-2)" }}>{v}</text>
-          </g>
+          <line key={v} x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y}
+            stroke="rgba(255,255,255,0.72)" strokeWidth="2.5" strokeLinecap="round" />
+        );
+      })}
+
+      {/* Pointer arrow */}
+      <g transform={`translate(${pointerTri.x} ${pointerTri.y}) rotate(${pointerDeg - 90})`}>
+        <polygon points="0,-7 15,0 0,7" fill="rgba(31,41,55,0.82)" />
+      </g>
+      <circle cx={pointerDot.x} cy={pointerDot.y} r={4.5} fill="rgba(31,41,55,0.82)" />
+
+      {/* Numeric labels at band centers — all fit within 380px viewBox */}
+      {[1, 2, 3, 4, 5].map((v) => {
+        const lp = polar(angleForValue(v), r + 26);
+        return (
+          <text key={v} x={lp.x} y={lp.y + 4} textAnchor="middle"
+            fontSize="12" fontWeight="700" style={{ fill: "var(--text-2)" }}>
+            {v}
+          </text>
         );
       })}
 
       {/* Center labels */}
-      <text x={cx} y={118} textAnchor="middle" fontSize="11" fontWeight="500" fontFamily="inherit" style={{ fill: "var(--text-2)" }}>Today&apos;s Index</text>
-      <text x={cx} y={158} textAnchor="middle" fontSize="24" fontWeight="600" fontFamily="inherit" style={{ fill: qualityColor }}>{quality}</text>
-      <text x={cx} y={322} textAnchor="middle" fontSize="10" fontWeight="600" letterSpacing="3" fontFamily="inherit" style={{ fill: "var(--text-3)" }}>AQI INDEX</text>
+      <text x={cx} y={cy - 38} textAnchor="middle" fontSize="12" fontWeight="500" fontFamily="inherit" style={{ fill: "var(--text-2)" }}>Today&apos;s Index</text>
+      <text x={cx} y={cy + 8} textAnchor="middle" fontSize="28" fontWeight="700" fontFamily="inherit" style={{ fill: qualityColor }}>{quality}</text>
+      <text x={cx} y={300} textAnchor="middle" fontSize="10" fontWeight="600" letterSpacing="3" fontFamily="inherit" style={{ fill: "var(--text-3)" }}>AQI INDEX</text>
     </svg>
   );
 }

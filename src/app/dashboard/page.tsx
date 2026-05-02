@@ -1919,8 +1919,8 @@ function DashboardPageContent() {
                     alignItems: "center",
                     justifyContent: "center",
                     padding: "8",
-                    marginBottom: "10em",
-                    marginTop: "-6em",
+                    marginBottom: "8em",
+                    marginTop: "-4em",
                   }}
                 >
                   <img

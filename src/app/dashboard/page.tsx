@@ -688,7 +688,6 @@ function DashboardPageContent() {
   const [navigating, setNavigating] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [dashboardScale, setDashboardScale] = useState(1);
   const [explorerCycleIndex, setExplorerCycleIndex] = useState(0);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [cooldownLeftSec, setCooldownLeftSec] = useState(0);
@@ -855,29 +854,6 @@ function DashboardPageContent() {
         dialBootTimerRef.current = null;
       }
     };
-  }, []);
-
-  useEffect(() => {
-    const BASE_WIDTH = 1760;
-    const BASE_HEIGHT = 900;
-
-    const updateScale = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-
-      // Keep mobile layout behavior untouched.
-      if (w <= 768) {
-        setDashboardScale(1);
-        return;
-      }
-
-      const scale = Math.min(w / BASE_WIDTH, h / BASE_HEIGHT, 1);
-      setDashboardScale(Math.max(0.6, scale));
-    };
-
-    updateScale();
-    window.addEventListener("resize", updateScale);
-    return () => window.removeEventListener("resize", updateScale);
   }, []);
 
   useEffect(() => {
@@ -1113,18 +1089,31 @@ function DashboardPageContent() {
   ];
 
   return (
-    <div style={{ width: "100vw", height: "100vh", minHeight: "100vh", overflow: "hidden", background: "var(--bg)" }}>
-      <div
-        style={{
-          width: `${100 / dashboardScale}%`,
-          height: `${100 / dashboardScale}%`,
-          minHeight: `${100 / dashboardScale}%`,
-          transform: `scale(${dashboardScale})`,
-          transformOrigin: "top left",
-          willChange: "transform",
-        }}
-      >
-    <div className="h-screen dash-fullscreen flex flex-col" style={{ background: "var(--bg)", minHeight: "100vh", height: "100vh" }}>
+    <div className="dash-fullscreen flex flex-col" style={{ background: "var(--bg)" }}>
+
+      {/* ────── INCOMPATIBLE DEVICE SCREEN ────── */}
+      {/* Shown via CSS on screens < 1024px wide or portrait orientation */}
+      <div className="dash-compat-guard">
+        <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(34,197,94,0.1)", border: "2px solid rgba(34,197,94,0.25)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="#22c55e" strokeWidth="2" strokeLinecap="round">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+          </svg>
+        </div>
+        <div>
+          <p style={{ fontSize: 20, fontWeight: 800, color: "var(--text-1, #0f172a)", marginBottom: 8 }}>Desktop Required</p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-2, #475569)", lineHeight: 1.6, maxWidth: 320 }}>
+            The AlgaeTree AI dashboard is designed for landscape screens with a minimum width of 1024px.
+          </p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-3, #94a3b8)", marginTop: 10, lineHeight: 1.6, maxWidth: 320 }}>
+            Please switch to a desktop or laptop, or rotate your device to landscape mode.
+          </p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 12, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round"><path d="M11 20A7 7 0 0 1 9.8 6.9C15.5 4.9 17 3.5 19 2c1 2 2 4.5 2 8 0 5.5-4.5 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>AlgaeTree AI</span>
+        </div>
+      </div>
       {/* Ambient BG */}
       <div className="ambient-bg">
         <div className="orb orb-1" />
@@ -2321,8 +2310,6 @@ function DashboardPageContent() {
         </motion.footer>
       </motion.main>
       </AnimatePresence>
-    </div>
-      </div>
     </div>
   );
 }

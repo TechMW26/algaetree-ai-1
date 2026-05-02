@@ -79,11 +79,37 @@
 /* dvh = dynamic viewport height: shrinks as mobile browser chrome appears/hides.  */
 /* This eliminates the "dead space at bottom" on iOS Safari / Android Chrome.      */
 .dash-fullscreen {
+  width: 100vw !important;
   height: 100vh !important;
   height: 100dvh !important;
   min-height: 100vh !important;
   min-height: 100dvh !important;
   overflow: hidden !important;
+}
+
+/* ===== INCOMPATIBLE DEVICE SCREEN ===== */
+/* Dashboard is designed for landscape screens ≥ 1024px wide.                      */
+/* On anything smaller or portrait, show a "please switch device" message.          */
+.dash-compat-guard {
+  display: none;
+}
+@media (max-width: 1023px), (orientation: portrait) {
+  .dash-compat-guard {
+    display: flex !important;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 32px;
+    background: var(--bg, #f6f8fb);
+    text-align: center;
+  }
+  .dash-fullscreen > *:not(.dash-compat-guard) {
+    display: none !important;
+  }
 }
 
 /* ===== KEYFRAMES (outside layers for global availability) ===== */

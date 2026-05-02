@@ -1896,6 +1896,7 @@ function DashboardPageContent() {
               <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative", overflow: "hidden", marginTop: 4 }}>
                 {(() => {
                   const batteryPercentage = Math.max(0, Math.min(100, Number(d.batteryPercentage ?? 0)));
+                  const isCharging = Boolean(d.batteryCharging);
                   const batteryFill = batteryPercentage >= 70
                     ? "linear-gradient(90deg, #22c55e 0%, #4ade80 100%)"
                     : batteryPercentage >= 45
@@ -1917,9 +1918,9 @@ function DashboardPageContent() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    padding: "8px 20px 18px",
-                    marginBottom: "8em",
-                    marginTop: "-4em",
+                    padding: "0",
+                    marginBottom: "10em",
+                    marginTop: "-6em",
                   }}
                 >
                   <img
@@ -1965,35 +1966,68 @@ function DashboardPageContent() {
                 >
                   <motion.p className="font-black text-amber-400 leading-none" style={{ fontSize: "4.5rem", filter: "drop-shadow(0 0 40px rgba(251,191,36,0.28))" }} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>{d.sensorHealth}%</motion.p>
                   <p className="font-bold uppercase tracking-[0.3em]" style={{ fontSize: 11, color: "var(--text-3)", marginTop: 0 }}>Sensor Health</p>
-                  <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div className="flex items-center justify-between" style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--text-3)", padding: "0 2px" }}>
-                      <span className="font-bold">Battery</span>
-                      <span className="font-bold" style={{ color: "var(--text)" }}>{batteryPercentage}%</span>
+                  <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 2 }}>
+                    <div className="flex items-center justify-between" style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--text-3)", padding: "0" }}>
                     </div>
                     <div
                       style={{
                         position: "relative",
                         width: "100%",
-                        height: 22,
+                        height: 50,
                         borderRadius: 999,
                         overflow: "hidden",
-                        background: "rgba(15,23,42,0.12)",
-                        border: "1px solid rgba(148,163,184,0.22)",
-                        boxShadow: "inset 0 1px 3px rgba(15,23,42,0.14)",
+                        padding: 0,
+                        background: "linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(226,232,240,0.18) 100%)",
+                        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 3px rgba(15,23,42,0.12), 0 12px 24px rgba(15,23,42,0.08)",
                       }}
                     >
+                      
                       <div
                         style={{
                           position: "absolute",
-                          inset: 0,
-                          width: `${batteryPercentage}%`,
-                          minWidth: batteryPercentage > 0 ? 28 : 0,
+                          inset: 4,
                           borderRadius: 999,
-                          background: batteryFill,
-                          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28), 0 0 18px rgba(248,250,252,0.12)",
-                          transition: "width 240ms ease, background 240ms ease",
+                          background: "rgba(15,23,42,0.12)",
                         }}
                       />
+                      
+                      <motion.div
+                        style={{
+                          position: "absolute",
+                          top: 4,
+                          left: 4,
+                          bottom: 4,
+                          width: `${batteryPercentage}%`,
+                          minWidth: batteryPercentage > 0 ? 44 : 0,
+                          borderRadius: 999,
+                          background: batteryFill,
+                          boxShadow: isCharging
+                            ? "inset 0 1px 0 rgba(255,255,255,0.34), 0 0 18px rgba(34,197,94,0.28)"
+                            : "inset 0 1px 0 rgba(255,255,255,0.34), 0 0 18px rgba(248,250,252,0.12)",
+                          transition: "width 240ms ease, background 240ms ease",
+                        }}
+                        animate={isCharging ? {
+                          boxShadow: [
+                            "inset 0 1px 0 rgba(255,255,255,0.34), 0 0 10px rgba(34,197,94,0.18)",
+                            "inset 0 1px 0 rgba(255,255,255,0.44), 0 0 24px rgba(34,197,94,0.45)",
+                            "inset 0 1px 0 rgba(255,255,255,0.34), 0 0 10px rgba(34,197,94,0.18)",
+                          ],
+                          opacity: [0.92, 1, 0.92],
+                        } : { boxShadow: isCharging
+                          ? "inset 0 1px 0 rgba(255,255,255,0.34), 0 0 18px rgba(34,197,94,0.28)"
+                          : "inset 0 1px 0 rgba(255,255,255,0.34), 0 0 18px rgba(248,250,252,0.12)", opacity: 1 }}
+                        transition={isCharging ? { duration: 1.4, repeat: Infinity, ease: "easeInOut" } : { duration: 0.24 }}
+                      >
+                        <div
+                          style={{
+                            position: "absolute",
+                            inset: "1px 1px auto 1px",
+                            height: "48%",
+                            borderRadius: 999,
+                            background: "linear-gradient(180deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.04) 100%)",
+                          }}
+                        />
+                      </motion.div>
                       <div
                         style={{
                           position: "absolute",
@@ -2001,10 +2035,10 @@ function DashboardPageContent() {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          fontSize: 12,
+                          fontSize: 13,
                           fontWeight: 800,
                           color: "#0f172a",
-                          mixBlendMode: "multiply",
+                          textShadow: "0 1px 0 rgba(255,255,255,0.3)",
                           letterSpacing: "0.08em",
                         }}
                       >
@@ -2012,11 +2046,13 @@ function DashboardPageContent() {
                       </div>
                     </div>
                   </div>
+                  <span className="">Battery</span>
                 </div>
                     </>
                   );
                 })()}
               </div>
+              
             </motion.div>
 
             {/* Device Control (single large card) */}

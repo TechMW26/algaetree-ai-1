@@ -2123,7 +2123,7 @@ function DashboardPageContent() {
                       <ToggleChip label="Refilling" enabled={uiOperations.Filling} busy={controlBusy} onToggle={() => { void toggleFluidOperation("Filling"); }} />
                       <ToggleChip label="Drain" enabled={uiOperations.Drain} busy={controlBusy} onToggle={() => { void toggleFluidOperation("Drain"); }} />
                       <ToggleChip label="Air Purification" enabled={uiOperations.Fan} busy={controlBusy} onToggle={() => { void toggleOperation("Fan"); }} />
-                      <ToggleChip label="Oxygen Infusion" enabled={uiOperations.AirBubbles} busy={controlBusy} onToggle={() => { void toggleOperation("AirBubbles"); }} />
+                      <ToggleChip label="Aeration" enabled={uiOperations.AirBubbles} busy={controlBusy} onToggle={() => { void toggleOperation("AirBubbles"); }} />
                       <div style={{ gridColumn: "1 / -1" }}>
                         <ToggleChip label="Solar Cleaning" enabled={uiOperations.SolarCleaning} busy={controlBusy} onToggle={() => { void toggleOperation("SolarCleaning"); }} />
                       </div>

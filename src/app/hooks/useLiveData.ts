@@ -292,7 +292,8 @@ function cycleEndDate(startDate?: string): string {
 }
 
 function getDisplayLocation(treeId: string, fallback?: string): string {
-  if (treeId === "AT00A0001" || treeId === "AT00A0002") return POD_DISPLAY_LOCATION;
+  if (treeId === "AT00A0001") return "Roshanpura Square, Bhopal";
+  if (treeId === "AT00A0002") return POD_DISPLAY_LOCATION;
   return fallback ?? "Unknown";
 }
 

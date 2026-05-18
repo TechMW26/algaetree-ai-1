@@ -23,9 +23,9 @@ const PODS: Pod[] = [
   {
     id: 1,
     treeId: "AT00A0001",
-    lat: 23.258690000000000,
-    lng: 77.430980000000000,
-    fallbackLocation: "Swami Vivekananda Theme Park",
+    lat: 23.2376013,
+    lng: 77.4010502,
+    fallbackLocation: "Roshanpura Square, Bhopal",
     country: "India",
   },
   {

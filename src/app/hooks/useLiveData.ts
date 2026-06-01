@@ -469,8 +469,8 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
       LED4: !!tree.Operations?.LED4,
     },
     airBubblesTiming: {
-      on: toNum(tree.Operations?.AirBubblesTiming?.On, 0),
-      off: toNum(tree.Operations?.AirBubblesTiming?.Off, 0),
+      on: toNum(tree.Operations?.AirBubblesTiming?.On, 15),
+      off: toNum(tree.Operations?.AirBubblesTiming?.Off, 5),
     },
     nutritionDosing: {
       Motor1Volume: toNum(tree.NutritionDosing?.Motor1Volume, 0),
@@ -552,7 +552,7 @@ export function useLiveData(treeId: string = DEFAULT_TREE_ID): LiveData {
       LED3: false,
       LED4: false,
     },
-    airBubblesTiming: { on: 0, off: 0 },
+    airBubblesTiming: { on: 15, off: 5 },
     nutritionDosing: {
       Motor1Volume: 0,
       Motor2Volume: 0,
@@ -669,24 +669,65 @@ export function useLiveData(treeId: string = DEFAULT_TREE_ID): LiveData {
 
     void loadSnapshot();
 
-    if (typeof EventSource !== "undefined") {
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const openStream = () => {
+      if (cancelled || typeof EventSource === "undefined") return;
+      try {
+        stream?.close();
+      } catch {
+        // ignore
+      }
       stream = new EventSource(`${normalizedBase}/AlgeeTree.json`);
       stream.addEventListener("put", handleStreamEvent as EventListener);
       stream.addEventListener("patch", handleStreamEvent as EventListener);
       stream.onerror = () => {
-        // Keep current data if stream drops; periodic fallback refresh below will recover.
+        // RTDB SSE can stall after regional redirects or network blips. Re-sync
+        // immediately via REST and reopen the stream so other tabs stay live.
+        void loadSnapshot();
+        if (reconnectTimer) return;
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          openStream();
+        }, 2000);
       };
-    }
+    };
 
-    // Safety refresh in case the stream disconnects silently.
+    openStream();
+
+    // Aggressive safety refresh so cross-tab updates surface within a few seconds
+    // even if the SSE channel is silently wedged.
     const id = setInterval(() => {
       void loadSnapshot();
-    }, 30000);
+    }, 3000);
+
+    const handleVisibility = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void loadSnapshot();
+        openStream();
+      }
+    };
+
+    const handleFocus = () => {
+      void loadSnapshot();
+    };
+
+    if (typeof window !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibility);
+      window.addEventListener("focus", handleFocus);
+      window.addEventListener("online", handleFocus);
+    }
 
     return () => {
       cancelled = true;
       clearInterval(id);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       stream?.close();
+      if (typeof window !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibility);
+        window.removeEventListener("focus", handleFocus);
+        window.removeEventListener("online", handleFocus);
+      }
     };
   }, [treeId]);
 

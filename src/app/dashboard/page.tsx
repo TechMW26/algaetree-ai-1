@@ -961,6 +961,29 @@ function DashboardPageContent() {
     if (!sent) setUiOperations(uiOperations);
   };
 
+  const toggleAllLeds = async () => {
+    const allOn = uiOperations.LED1 && uiOperations.LED2 && uiOperations.LED3 && uiOperations.LED4;
+    const nextValue = !allOn;
+    const nextOps = {
+      ...uiOperations,
+      LED1: nextValue,
+      LED2: nextValue,
+      LED3: nextValue,
+      LED4: nextValue,
+    };
+    setUiOperations(nextOps);
+    const sent = await sendChangeCommand(operationChangeCodes.LED1, nextValue ? 1 : 0, {
+      Operations: {
+        ...nextOps,
+        AirBubblesTiming: {
+          On: uiAirBubblesTiming.on,
+          Off: uiAirBubblesTiming.off,
+        },
+      },
+    });
+    if (!sent) setUiOperations(uiOperations);
+  };
+
   const commitIntensity = async (
     nextIntensity: typeof ledDraft,
     targets: (keyof typeof ledDraft)[],
@@ -2185,43 +2208,104 @@ function DashboardPageContent() {
 
                   {controlPanelTab === "lighting" && (
                     <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(34,197,94,0.12), rgba(56,189,248,0.04))", display: "flex", flexDirection: "column", gap: 12 }}>
-                      <div className="rounded-xl" style={{ padding: "10px 12px", border: "1px solid var(--border)", background: "var(--mini-bg)" }}>
-                        <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-                          <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-2)", letterSpacing: "0.03em", textTransform: "uppercase" }}>Master Lighting</span>
-                          <span style={{ fontSize: 11, fontWeight: 800, color: "#16a34a" }}>{masterLedValue}</span>
+                      <div style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
+                        <div className="rounded-xl" style={{ flex: "1 1 auto", minWidth: 0, padding: "10px 12px", border: "1px solid var(--border)", background: "var(--mini-bg)" }}>
+                          <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-2)", letterSpacing: "0.03em", textTransform: "uppercase" }}>Master Lighting</span>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: "#16a34a" }}>{masterLedValue}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={255}
+                            step={1}
+                            value={masterLedValue}
+                            disabled={controlBusy}
+                            onChange={(e) => {
+                              const next = clampNumber(Number(e.currentTarget.value), 0, 255);
+                              setLedDraft({
+                                LED1: next,
+                                LED2: next,
+                                LED3: next,
+                                LED4: next,
+                              });
+                            }}
+                            onMouseUp={(e) => {
+                              void commitMasterIntensitySequential(Number(e.currentTarget.value));
+                            }}
+                            onTouchEnd={(e) => {
+                              void commitMasterIntensitySequential(Number(e.currentTarget.value));
+                            }}
+                            style={{
+                              width: "100%",
+                              accentColor: "#22c55e",
+                              cursor: controlBusy ? "not-allowed" : "pointer",
+                              opacity: controlBusy ? 0.7 : 1,
+                            }}
+                          />
+                          <p style={{ marginTop: 6, fontSize: 10, color: "var(--text-3)", fontWeight: 700 }}>
+                            Applies one zone at a time in sequence: LED1 → LED2 → LED3 → LED4.
+                          </p>
                         </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={255}
-                          step={1}
-                          value={masterLedValue}
-                          disabled={controlBusy}
-                          onChange={(e) => {
-                            const next = clampNumber(Number(e.currentTarget.value), 0, 255);
-                            setLedDraft({
-                              LED1: next,
-                              LED2: next,
-                              LED3: next,
-                              LED4: next,
-                            });
-                          }}
-                          onMouseUp={(e) => {
-                            void commitMasterIntensitySequential(Number(e.currentTarget.value));
-                          }}
-                          onTouchEnd={(e) => {
-                            void commitMasterIntensitySequential(Number(e.currentTarget.value));
-                          }}
-                          style={{
-                            width: "100%",
-                            accentColor: "#22c55e",
-                            cursor: controlBusy ? "not-allowed" : "pointer",
-                            opacity: controlBusy ? 0.7 : 1,
-                          }}
-                        />
-                        <p style={{ marginTop: 6, fontSize: 10, color: "var(--text-3)", fontWeight: 700 }}>
-                          Applies one zone at a time in sequence: LED1 → LED2 → LED3 → LED4.
-                        </p>
+                        {(() => {
+                          const allLedsOn = uiOperations.LED1 && uiOperations.LED2 && uiOperations.LED3 && uiOperations.LED4;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => { void toggleAllLeds(); }}
+                              disabled={controlBusy}
+                              className="cursor-pointer rounded-xl"
+                              style={{
+                                flex: "0 0 auto",
+                                width: 110,
+                                padding: "10px 10px",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 8,
+                                border: `1px solid ${allLedsOn ? "rgba(34,197,94,0.42)" : "rgba(239,68,68,0.32)"}`,
+                                background: allLedsOn
+                                  ? "linear-gradient(145deg, rgba(34,197,94,0.18), rgba(16,185,129,0.04))"
+                                  : "linear-gradient(145deg, rgba(239,68,68,0.14), rgba(248,113,113,0.04))",
+                                boxShadow: allLedsOn ? "0 8px 20px rgba(34,197,94,0.14)" : "0 8px 20px rgba(239,68,68,0.1)",
+                                opacity: controlBusy ? 0.7 : 1,
+                                transition: "all .2s ease",
+                              }}
+                              aria-label="Toggle all LEDs"
+                            >
+                              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--text-2)", letterSpacing: "0.05em", textTransform: "uppercase" }}>Master</span>
+                              <span
+                                style={{
+                                  width: 44,
+                                  height: 24,
+                                  borderRadius: 999,
+                                  background: allLedsOn
+                                    ? "linear-gradient(135deg, #16a34a, #22c55e)"
+                                    : "linear-gradient(135deg, #ef4444, #f87171)",
+                                  position: "relative",
+                                  transition: "all .2s ease",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    position: "absolute",
+                                    top: 2,
+                                    left: allLedsOn ? 22 : 2,
+                                    width: 20,
+                                    height: 20,
+                                    borderRadius: "50%",
+                                    background: "#fff",
+                                    transition: "all .2s ease",
+                                  }}
+                                />
+                              </span>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: allLedsOn ? "#16a34a" : "#ef4444", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                                {allLedsOn ? "All On" : "All Off"}
+                              </span>
+                            </button>
+                          );
+                        })()}
                       </div>
 
                       <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>

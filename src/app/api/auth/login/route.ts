@@ -1,12 +1,10 @@
 import { type NextRequest } from "next/server";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { User } from "@/lib/models/User";
-import { verifyPassword } from "@/lib/auth/password";
 import { issueLoginOtp } from "@/lib/auth/otpService";
 import { recordAudit } from "@/lib/auth/audit";
 import { loginSchema } from "@/lib/validation/auth";
 import { ok, fail, getClientIp } from "@/lib/http";
-import { MAX_FAILED_LOGINS, LOGIN_LOCK_MS } from "@/lib/constants";
 
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -21,7 +19,7 @@ export async function POST(req: NextRequest) {
     return fail(parsed.error.issues[0]?.message ?? "Invalid input", 422);
   }
 
-  const { email, password } = parsed.data;
+  const { email } = parsed.data;
 
   try {
     await connectToDatabase();
@@ -31,40 +29,28 @@ export async function POST(req: NextRequest) {
 
   const user = await User.findOne({ email });
 
-  // Generic error to avoid user enumeration.
-  const invalidCreds = () => fail("Invalid email or password", 401);
-
-  if (!user || !user.isActive) {
-    await recordAudit(user?._id ?? null, "LOGIN_FAILED", {
+  // The user must exist to receive an OTP.
+  if (!user) {
+    await recordAudit(null, "LOGIN_FAILED", {
       email,
-      reason: !user ? "no_user" : "inactive",
+      reason: "no_user",
       ip: getClientIp(req),
     });
-    return invalidCreds();
+    return fail("This email is not registered", 404);
+  }
+
+  if (!user.isActive) {
+    await recordAudit(user._id, "LOGIN_FAILED", {
+      email,
+      reason: "inactive",
+      ip: getClientIp(req),
+    });
+    return fail("This account has been disabled", 403);
   }
 
   // Account lockout check.
   if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
     return fail("Account temporarily locked. Try again later.", 423);
-  }
-
-  const passwordOk = await verifyPassword(password, user.passwordHash);
-  if (!passwordOk) {
-    user.failedLoginAttempts += 1;
-    if (user.failedLoginAttempts >= MAX_FAILED_LOGINS) {
-      user.lockUntil = new Date(Date.now() + LOGIN_LOCK_MS);
-      user.failedLoginAttempts = 0;
-    }
-    await user.save();
-    await recordAudit(user._id, "LOGIN_FAILED", { email, reason: "bad_password", ip: getClientIp(req) });
-    return invalidCreds();
-  }
-
-  // Reset failure counters on a successful credential check.
-  if (user.failedLoginAttempts !== 0 || user.lockUntil) {
-    user.failedLoginAttempts = 0;
-    user.lockUntil = null;
-    await user.save();
   }
 
   const otpResult = await issueLoginOtp(user._id, user.email);

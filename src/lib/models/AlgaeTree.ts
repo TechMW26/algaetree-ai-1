@@ -12,6 +12,7 @@ export interface IAlgaeTree {
   treeId: string;
   name: string;
   location: string;
+  city: string;
   lat: number;
   lng: number;
   isActive: boolean;
@@ -24,6 +25,7 @@ const algaeTreeSchema = new Schema<IAlgaeTree>(
     treeId: { type: String, required: true, unique: true, trim: true, index: true },
     name: { type: String, required: true, trim: true },
     location: { type: String, default: "" },
+    city: { type: String, default: "" },
     lat: { type: Number, required: true },
     lng: { type: Number, required: true },
     isActive: { type: Boolean, default: true },

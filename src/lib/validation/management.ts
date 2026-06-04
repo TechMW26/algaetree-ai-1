@@ -3,7 +3,6 @@ import { ROLES, ACCESS_TYPES } from "@/lib/constants";
 
 export const createUserSchema = z.object({
   email: z.string().trim().toLowerCase().email("A valid email is required"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
   // Only ADMIN or CUSTOMER can be created via the API.
   role: z.enum([ROLES.ADMIN, ROLES.CUSTOMER]),
   // For ADMIN: scope config. For CUSTOMER: treeIds only.
@@ -29,6 +28,7 @@ export const createTreeSchema = z.object({
   treeId: z.string().trim().min(1, "treeId is required"),
   name: z.string().trim().min(1, "name is required"),
   location: z.string().trim().optional(),
+  city: z.string().trim().optional(),
   lat: z.number(),
   lng: z.number(),
 });

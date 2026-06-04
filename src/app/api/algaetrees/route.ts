@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     : { isActive: true, treeId: { $in: access.treeIds } };
 
   const trees = await AlgaeTree.find(filter)
-    .select("treeId name location lat lng")
+    .select("treeId name location city lat lng")
     .sort({ treeId: 1 })
     .lean();
 

@@ -2,8 +2,10 @@
 
 import dynamic from "next/dynamic";
 import Image from "next/image";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import ThemeToggle from "./components/ThemeToggle";
+import TreeGrid from "./components/TreeGrid";
 import { AuthGuard, useAuth } from "./components/AuthGuard";
 
 const NetworkMap = dynamic(() => import("./components/NetworkMap"), {
@@ -39,6 +41,7 @@ function NetworkPageContent() {
   const { user, logout } = useAuth();
   const canManage = user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
   const managePath = user?.role === "SUPER_ADMIN" ? "/super-admin" : "/admin";
+  const [view, setView] = useState<"map" | "grid">("map");
 
   return (
     <div
@@ -46,10 +49,10 @@ function NetworkPageContent() {
         position: "fixed",
         inset: 0,
         background: "var(--bg)",
-        overflow: "hidden",
+        overflow: view === "grid" ? "auto" : "hidden",
       }}
     >
-      <NetworkMap />
+      {view === "map" ? <NetworkMap /> : <TreeGrid />}
 
       {/* Header overlay */}
       <div
@@ -119,6 +122,67 @@ function NetworkPageContent() {
               Manage
             </button>
           )}
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 999,
+              padding: 4,
+            }}
+          >
+            <button
+              onClick={() => setView("map")}
+              className="cursor-pointer"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                border: "none",
+                borderRadius: 999,
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                background: view === "map" ? "linear-gradient(135deg,#22c55e,#16a34a)" : "transparent",
+                color: view === "map" ? "#04140a" : "var(--text-1)",
+              }}
+              aria-pressed={view === "map"}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m9 4-6 2v14l6-2 6 2 6-2V4l-6 2-6-2Z" />
+                <path d="M9 4v14M15 6v14" />
+              </svg>
+              Map
+            </button>
+            <button
+              onClick={() => setView("grid")}
+              className="cursor-pointer"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                border: "none",
+                borderRadius: 999,
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                background: view === "grid" ? "linear-gradient(135deg,#22c55e,#16a34a)" : "transparent",
+                color: view === "grid" ? "#04140a" : "var(--text-1)",
+              }}
+              aria-pressed={view === "grid"}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+              </svg>
+              Grid
+            </button>
+          </div>
           <button
             onClick={() => void logout()}
             className="cursor-pointer"

@@ -141,7 +141,6 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
 
   // create form
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [role, setRole] = useState<"ADMIN" | "CUSTOMER">(mode === "super" ? "ADMIN" : "CUSTOMER");
   const [accessAll, setAccessAll] = useState(false);
   const [selectedTrees, setSelectedTrees] = useState<string[]>([]);
@@ -186,7 +185,7 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
     e.preventDefault();
     setBusy(true);
     try {
-      const payload: Record<string, unknown> = { email, password, role };
+      const payload: Record<string, unknown> = { email, role };
       if (role === "ADMIN") {
         payload.accessType = accessAll ? "ALL" : "CUSTOM";
         if (!accessAll) payload.treeIds = selectedTrees;
@@ -205,7 +204,6 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
       }
       notify("ok", `Created ${data.user.email}`);
       setEmail("");
-      setPassword("");
       setSelectedTrees([]);
       setAccessAll(false);
       await loadUsers();
@@ -299,7 +297,6 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
           <h2 style={s.h2}>Create {canCreateAdmin ? "user" : "customer"}</h2>
           <form onSubmit={createUser} style={s.form}>
             <input style={s.input} type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input style={s.input} type="password" placeholder="Temporary password (min 8)" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
             {canCreateAdmin && (
               <div>
                 <span style={s.fieldLabel}>Role</span>
@@ -433,33 +430,33 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
 const s: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
-    background: "radial-gradient(1200px 600px at 15% -10%, rgba(34,197,94,0.10), transparent 55%), radial-gradient(1000px 500px at 100% 0%, rgba(56,189,248,0.08), transparent 50%), #070d18",
-    color: "#e2e8f0",
+    background: "radial-gradient(1200px 600px at 15% -10%, rgba(34,197,94,0.10), transparent 55%), radial-gradient(1000px 500px at 100% 0%, rgba(56,189,248,0.07), transparent 50%), var(--bg)",
+    color: "var(--text-1)",
     padding: "28px 28px 48px",
   },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 },
   headerActions: { display: "flex", alignItems: "center", gap: 10 },
-  h1: { margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: "#f8fafc" },
-  sub: { margin: "4px 0 0", color: "#94a3b8", fontSize: 13 },
-  backLink: { textDecoration: "none", color: "#cbd5e1", background: "rgba(148,163,184,0.10)", border: "1px solid rgba(148,163,184,0.20)", borderRadius: 10, padding: "8px 14px", fontSize: 13, fontWeight: 600 },
-  logout: { background: "rgba(148,163,184,0.12)", color: "#e2e8f0", border: "1px solid rgba(148,163,184,0.22)", borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontWeight: 600 },
+  h1: { margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: "var(--text-1)" },
+  sub: { margin: "4px 0 0", color: "var(--text-2)", fontSize: 13 },
+  backLink: { textDecoration: "none", color: "var(--text-1)", background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", fontSize: 13, fontWeight: 600 },
+  logout: { background: "var(--surface-hover)", color: "var(--text-1)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontWeight: 600 },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18 },
   card: {
-    background: "linear-gradient(180deg, rgba(17,26,45,0.92), rgba(11,18,33,0.92))",
-    border: "1px solid rgba(148,163,184,0.14)",
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
     borderRadius: 18,
     padding: 20,
-    boxShadow: "0 16px 40px -24px rgba(0,0,0,0.8)",
+    boxShadow: "0 16px 40px -28px rgba(0,0,0,0.45)",
   },
-  h2: { margin: "0 0 14px", fontSize: 16, fontWeight: 700, color: "#f1f5f9" },
+  h2: { margin: "0 0 14px", fontSize: 16, fontWeight: 700, color: "var(--text-1)" },
   form: { display: "flex", flexDirection: "column", gap: 12 },
-  fieldLabel: { display: "block", fontSize: 12, color: "#94a3b8", fontWeight: 600, marginBottom: 6 },
+  fieldLabel: { display: "block", fontSize: 12, color: "var(--text-2)", fontWeight: 600, marginBottom: 6 },
   input: {
-    background: "rgba(2,6,23,0.55)",
-    border: "1px solid rgba(148,163,184,0.22)",
+    background: "var(--surface-hover)",
+    border: "1px solid var(--border)",
     borderRadius: 12,
     padding: "11px 13px",
-    color: "#f1f5f9",
+    color: "var(--text-1)",
     fontSize: 14,
     outline: "none",
     width: "100%",
@@ -476,15 +473,15 @@ const s: Record<string, React.CSSProperties> = {
     border: "none",
     padding: "6px 4px",
     cursor: "pointer",
-    color: "#e2e8f0",
+    color: "var(--text-1)",
   },
   checkBox: {
     flex: "0 0 auto",
     width: 20,
     height: 20,
     borderRadius: 6,
-    border: "1.5px solid rgba(148,163,184,0.4)",
-    background: "rgba(2,6,23,0.5)",
+    border: "1.5px solid var(--border-hover)",
+    background: "var(--surface-hover)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -492,18 +489,18 @@ const s: Record<string, React.CSSProperties> = {
   },
   checkBoxOn: { background: "linear-gradient(135deg,#22c55e,#16a34a)", borderColor: "#22c55e" },
   checkLabel: { display: "flex", flexDirection: "column", lineHeight: 1.25, fontSize: 13.5, fontWeight: 600 },
-  checkSub: { color: "#64748b", fontSize: 11, fontWeight: 500 },
+  checkSub: { color: "var(--text-2)", fontSize: 11, fontWeight: 500 },
   /* custom dropdown */
   ddTrigger: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     width: "100%",
-    background: "rgba(2,6,23,0.55)",
-    border: "1px solid rgba(148,163,184,0.22)",
+    background: "var(--surface-hover)",
+    border: "1px solid var(--border)",
     borderRadius: 12,
     padding: "11px 13px",
-    color: "#f1f5f9",
+    color: "var(--text-1)",
     fontSize: 14,
     cursor: "pointer",
   },
@@ -512,12 +509,12 @@ const s: Record<string, React.CSSProperties> = {
     top: "calc(100% + 6px)",
     left: 0,
     right: 0,
-    background: "#0f172a",
-    border: "1px solid rgba(148,163,184,0.22)",
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
     borderRadius: 12,
     padding: 6,
     zIndex: 40,
-    boxShadow: "0 18px 40px -18px rgba(0,0,0,0.9)",
+    boxShadow: "0 18px 40px -20px rgba(0,0,0,0.45)",
   },
   ddItem: {
     display: "flex",
@@ -528,27 +525,27 @@ const s: Record<string, React.CSSProperties> = {
     border: "none",
     borderRadius: 8,
     padding: "9px 11px",
-    color: "#e2e8f0",
+    color: "var(--text-1)",
     fontSize: 14,
     cursor: "pointer",
   },
-  ddItemActive: { background: "rgba(34,197,94,0.12)", color: "#86efac" },
-  checkRow: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" },
-  treeList: { display: "flex", flexDirection: "column", gap: 4, maxHeight: 200, overflowY: "auto", padding: 10, background: "rgba(2,6,23,0.35)", borderRadius: 12, border: "1px solid rgba(148,163,184,0.10)" },
-  treeListLabel: { fontSize: 12, color: "#94a3b8", fontWeight: 600, marginBottom: 2 },
+  ddItemActive: { background: "rgba(34,197,94,0.14)", color: "#15803d" },
+  checkRow: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-2)" },
+  treeList: { display: "flex", flexDirection: "column", gap: 4, maxHeight: 200, overflowY: "auto", padding: 10, background: "var(--surface-hover)", borderRadius: 12, border: "1px solid var(--border)" },
+  treeListLabel: { fontSize: 12, color: "var(--text-2)", fontWeight: 600, marginBottom: 2 },
   treeItem: { display: "flex", alignItems: "center", gap: 8, fontSize: 13 },
-  muted: { color: "#64748b", fontSize: 12 },
+  muted: { color: "var(--text-2)", fontSize: 12 },
   primary: { background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#04140a", fontWeight: 700, border: "none", borderRadius: 12, padding: "11px 14px", cursor: "pointer", fontSize: 14, marginTop: 2 },
   userList: { display: "flex", flexDirection: "column", gap: 8 },
-  userRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 13px", background: "rgba(2,6,23,0.35)", border: "1px solid rgba(148,163,184,0.10)", borderRadius: 12 },
-  userEmail: { fontSize: 14, fontWeight: 600, color: "#f1f5f9" },
+  userRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 13px", background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: 12 },
+  userEmail: { fontSize: 14, fontWeight: 600, color: "var(--text-1)" },
   userMeta: { display: "flex", gap: 8, alignItems: "center", marginTop: 4, fontSize: 12 },
-  badge: { background: "rgba(34,197,94,0.15)", color: "#86efac", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700, letterSpacing: 0.3 },
+  badge: { background: "rgba(34,197,94,0.16)", color: "#15803d", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700, letterSpacing: 0.3 },
   userActions: { display: "flex", gap: 6 },
-  smallBtn: { background: "rgba(148,163,184,0.12)", color: "#e2e8f0", border: "1px solid rgba(148,163,184,0.22)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 600 },
+  smallBtn: { background: "var(--surface-hover)", color: "var(--text-1)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 600 },
   toast: { padding: "11px 15px", borderRadius: 12, marginBottom: 16, fontSize: 13, fontWeight: 600 },
-  toastOk: { background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", color: "#86efac" },
-  toastErr: { background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5" },
-  modalBg: { position: "fixed", inset: 0, background: "rgba(2,6,23,0.7)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 100 },
-  modal: { background: "#0f172a", border: "1px solid rgba(148,163,184,0.2)", borderRadius: 18, padding: 22, width: "100%", maxWidth: 440, boxShadow: "0 30px 70px -30px rgba(0,0,0,0.9)" },
+  toastOk: { background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", color: "#15803d" },
+  toastErr: { background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#dc2626" },
+  modalBg: { position: "fixed", inset: 0, background: "rgba(2,6,23,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 100 },
+  modal: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, padding: 22, width: "100%", maxWidth: 440, boxShadow: "0 30px 70px -32px rgba(0,0,0,0.5)" },
 };

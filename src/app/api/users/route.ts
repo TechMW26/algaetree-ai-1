@@ -2,7 +2,6 @@ import { type NextRequest } from "next/server";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { User } from "@/lib/models/User";
 import { AdminScope } from "@/lib/models/AdminScope";
-import { hashPassword } from "@/lib/auth/password";
 import { requireRole } from "@/lib/auth/rbac";
 import { recordAudit } from "@/lib/auth/audit";
 import {
@@ -56,7 +55,7 @@ export async function POST(req: NextRequest) {
     return fail(parsed.error.issues[0]?.message ?? "Invalid input", 422);
   }
 
-  const { email, password, role, accessType, treeIds = [] } = parsed.data;
+  const { email, role, accessType, treeIds = [] } = parsed.data;
   const creator = guard.auth;
 
   // Authorization rules on who can create whom.
@@ -108,7 +107,6 @@ export async function POST(req: NextRequest) {
 
   const user = await User.create({
     email,
-    passwordHash: await hashPassword(password),
     role,
     createdBy: creator.sub,
     isActive: true,

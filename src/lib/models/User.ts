@@ -4,7 +4,7 @@ import { ROLE_VALUES, type Role } from "@/lib/constants";
 export interface IUser {
   _id: Types.ObjectId;
   email: string;
-  passwordHash: string;
+  passwordHash?: string;
   role: Role;
   createdBy: Types.ObjectId | null;
   isActive: boolean;
@@ -24,7 +24,7 @@ const userSchema = new Schema<IUser>(
       trim: true,
       index: true,
     },
-    passwordHash: { type: String, required: true },
+    passwordHash: { type: String, required: false },
     role: { type: String, enum: ROLE_VALUES, required: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     isActive: { type: Boolean, default: true },

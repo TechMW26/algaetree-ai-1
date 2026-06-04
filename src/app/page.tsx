@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import ThemeToggle from "./components/ThemeToggle";
+import { AuthGuard, useAuth } from "./components/AuthGuard";
 
 const NetworkMap = dynamic(() => import("./components/NetworkMap"), {
   ssr: false,
@@ -26,7 +27,18 @@ const NetworkMap = dynamic(() => import("./components/NetworkMap"), {
 });
 
 export default function NetworkPage() {
+  return (
+    <AuthGuard>
+      <NetworkPageContent />
+    </AuthGuard>
+  );
+}
+
+function NetworkPageContent() {
   const router = useRouter();
+  const { user, logout } = useAuth();
+  const canManage = user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
+  const managePath = user?.role === "SUPER_ADMIN" ? "/super-admin" : "/admin";
 
   return (
     <div
@@ -82,7 +94,55 @@ export default function NetworkPage() {
           </span>
         </button>
 
-        <div style={{ pointerEvents: "auto" }}>
+        <div style={{ pointerEvents: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+          {canManage && (
+            <button
+              onClick={() => router.push(managePath)}
+              className="cursor-pointer"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: "var(--surface)",
+                padding: "10px 16px",
+                borderRadius: 24,
+                border: "1px solid var(--border)",
+                color: "var(--text-1)",
+                fontSize: 14,
+                fontWeight: 600,
+              }}
+              aria-label="Open management console"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 7h18M3 12h18M3 17h18" />
+              </svg>
+              Manage
+            </button>
+          )}
+          <button
+            onClick={() => void logout()}
+            className="cursor-pointer"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "var(--surface)",
+              padding: "10px 16px",
+              borderRadius: 24,
+              border: "1px solid var(--border)",
+              color: "var(--text-1)",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+            aria-label="Sign out"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <path d="m16 17 5-5-5-5" />
+              <path d="M21 12H9" />
+            </svg>
+            Sign out
+          </button>
           <ThemeToggle />
         </div>
       </div>

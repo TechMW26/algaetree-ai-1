@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useLiveData, type LiveData } from "../hooks/useLiveData";
+import TreeSelect from "./TreeSelect";
 
 type Pod = {
   id: number;
@@ -162,7 +163,16 @@ function writeCachedMapAsset(url: string, data: unknown): void {
 
 export default function NetworkMap() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Record<number, L.Marker>>({});
+  const flyToTreeRef = useRef<
+    ((t: { treeId: string; lat: number; lng: number }) => void) | null
+  >(null);
+  const [assignedTrees, setAssignedTrees] = useState<
+    { treeId: string; name: string; lat: number; lng: number }[]
+  >([]);
+  const [treesLoaded, setTreesLoaded] = useState(false);
+  const [selectedTreeId, setSelectedTreeId] = useState("");
   const treeOne = useLiveData("AT00A0001");
   const treeTwo = useLiveData("AT00A0002");
   const livePodDataRef = useRef<Record<number, PodPopupData>>({
@@ -174,6 +184,32 @@ export default function NetworkMap() {
     1: buildPodPopupData(PODS[0], treeOne),
     2: buildPodPopupData(PODS[1], treeTwo),
   };
+
+  // Fetch the AlgaeTrees assigned to the logged-in user for the dropdown.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/algaetrees", { cache: "no-store" });
+        if (!res.ok || !active) return;
+        const data = await res.json();
+        const trees = (data.trees ?? []) as {
+          treeId: string;
+          name: string;
+          lat: number;
+          lng: number;
+        }[];
+        if (active) setAssignedTrees(trees);
+      } catch {
+        // Dropdown stays empty on failure; map still works.
+      } finally {
+        if (active) setTreesLoaded(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -190,6 +226,8 @@ export default function NetworkMap() {
       preferCanvas: true,
       wheelPxPerZoomLevel: 80,
     });
+
+    mapRef.current = map;
 
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
@@ -469,6 +507,34 @@ export default function NetworkMap() {
       window.location.href = `/dashboard?pod=${id ?? ""}`;
     };
 
+    // Allow the dropdown (rendered outside this effect) to drive the map.
+    flyToTreeRef.current = (t) => {
+      map.closePopup();
+      const podEntry = PODS.find((p) => p.treeId === t.treeId);
+      if (podEntry) {
+        const marker = markersRef.current[podEntry.id];
+        const currentZoom = map.getZoom();
+        if (currentZoom >= 16) {
+          map.flyTo([podEntry.lat, podEntry.lng], currentZoom, {
+            animate: true,
+            duration: 0.45,
+            easeLinearity: 0.35,
+            noMoveStart: true,
+          });
+          const handleMoveEnd = () => {
+            map.off("moveend", handleMoveEnd);
+            marker?.openPopup();
+          };
+          map.on("moveend", handleMoveEnd);
+        } else {
+          runSequentialZoom(podEntry.lat, podEntry.lng, () => marker?.openPopup());
+        }
+        return;
+      }
+      // Registry tree without a dedicated marker: just center & zoom.
+      runSequentialZoom(t.lat, t.lng, () => {});
+    };
+
     containerRef.current.addEventListener("click", handleContainerClick);
 
     return () => {
@@ -478,6 +544,8 @@ export default function NetworkMap() {
       map.off("zoomend", updateLayerByZoom);
       containerRef.current?.removeEventListener("click", handleContainerClick);
       markersRef.current = {};
+      flyToTreeRef.current = null;
+      mapRef.current = null;
       map.remove();
     };
   }, []);
@@ -490,5 +558,47 @@ export default function NetworkMap() {
     });
   });
 
-  return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
+  // Show only the markers for AlgaeTrees the current user is assigned to.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !treesLoaded) return;
+    const allowed = new Set(assignedTrees.map((t) => t.treeId));
+    PODS.forEach((pod) => {
+      const marker = markersRef.current[pod.id];
+      if (!marker) return;
+      const visible = allowed.has(pod.treeId);
+      if (visible && !map.hasLayer(marker)) {
+        marker.addTo(map);
+      } else if (!visible && map.hasLayer(marker)) {
+        map.removeLayer(marker);
+      }
+    });
+  }, [assignedTrees, treesLoaded]);
+
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      {assignedTrees.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1200,
+          }}
+        >
+          <TreeSelect
+            options={assignedTrees}
+            value={selectedTreeId}
+            onChange={(id) => {
+              setSelectedTreeId(id);
+              const t = assignedTrees.find((x) => x.treeId === id);
+              if (t) flyToTreeRef.current?.(t);
+            }}
+          />
+        </div>
+      )}
+      <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+    </div>
+  );
 }

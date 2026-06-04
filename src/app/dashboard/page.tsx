@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLiveData } from "../hooks/useLiveData";
-import DashboardPasswordGate from "../components/DashboardPasswordGate";
+import { AuthGuard } from "../components/AuthGuard";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -2547,14 +2547,13 @@ function DashboardPageContent() {
 }
 
 export default function DashboardPage() {
-  const password = process.env.NEXT_PUBLIC_DASHBOARD_PASSWORD || "7500";
   return (
     <Suspense fallback={<div style={{ width: "100%", height: "100vh", background: "var(--bg)" }} />}>
-      <DashboardPasswordGate correctPassword={password}>
+      <AuthGuard>
         <Suspense fallback={null}>
           <DashboardPageContent />
         </Suspense>
-      </DashboardPasswordGate>
+      </AuthGuard>
     </Suspense>
   );
 }

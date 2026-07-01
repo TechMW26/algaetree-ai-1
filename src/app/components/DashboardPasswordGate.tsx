@@ -211,7 +211,9 @@ export default function DashboardPasswordGate({
                 padding: "16px 8px",
                 background: "rgba(51, 65, 85, 0.45)",
                 color: "#f1f5f9",
-                border: "1.5px solid rgba(100, 116, 139, 0.3)",
+                borderWidth: "1.5px",
+                borderStyle: "solid",
+                borderColor: "rgba(100, 116, 139, 0.3)",
               }}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -253,10 +255,12 @@ export default function DashboardPasswordGate({
                   ? "rgba(51, 65, 85, 0.2)"
                   : "rgba(120, 53, 15, 0.3)",
               color: password.length === 0 ? "#64748b" : "#fb923c",
-              border:
+              borderWidth: "1.5px",
+              borderStyle: "solid",
+              borderColor:
                 password.length === 0
-                  ? "1.5px solid rgba(100, 116, 139, 0.2)"
-                  : "1.5px solid rgba(251, 146, 60, 0.3)",
+                  ? "rgba(100, 116, 139, 0.2)"
+                  : "rgba(251, 146, 60, 0.3)",
               opacity: password.length === 0 ? 0.5 : 1,
               pointerEvents: password.length === 0 ? "none" : "auto",
             }}
@@ -283,7 +287,9 @@ export default function DashboardPasswordGate({
               padding: "16px 8px",
               background: "rgba(51, 65, 85, 0.45)",
               color: "#f1f5f9",
-              border: "1.5px solid rgba(100, 116, 139, 0.3)",
+              borderWidth: "1.5px",
+              borderStyle: "solid",
+              borderColor: "rgba(100, 116, 139, 0.3)",
               fontSize: 20,
               fontWeight: 700,
             }}
@@ -310,10 +316,12 @@ export default function DashboardPasswordGate({
                   ? "rgba(51, 65, 85, 0.2)"
                   : "rgba(127, 29, 29, 0.3)",
               color: password.length === 0 ? "#64748b" : "#f87171",
-              border:
+              borderWidth: "1.5px",
+              borderStyle: "solid",
+              borderColor:
                 password.length === 0
-                  ? "1.5px solid rgba(100, 116, 139, 0.2)"
-                  : "1.5px solid rgba(248, 113, 113, 0.3)",
+                  ? "rgba(100, 116, 139, 0.2)"
+                  : "rgba(248, 113, 113, 0.3)",
               opacity: password.length === 0 ? 0.5 : 1,
               pointerEvents: password.length === 0 ? "none" : "auto",
             }}

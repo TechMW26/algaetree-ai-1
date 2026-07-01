@@ -9,7 +9,6 @@ import { useConversation } from "@elevenlabs/react";
 import { useLiveData } from "../hooks/useLiveData";
 import { useVisionDetection, buildGestureContext } from "../hooks/useVisionDetection";
 import type { GestureInfo } from "../hooks/useVisionDetection";
-import ThemeToggle from "../components/ThemeToggle";
 
 const Avatar3D = dynamic(() => import("../components/Avatar3D"), { ssr: false });
 
@@ -370,7 +369,6 @@ function TalkPageContent() {
           <span className="font-bold" style={{ fontSize: 18 }}>AlgaeTree</span>
         </div>
 
-        <ThemeToggle />
       </motion.nav>
 
       {/* ── LAYER 3: Side panels (hidden on mobile) ── */}

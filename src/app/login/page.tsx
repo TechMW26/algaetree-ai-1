@@ -45,6 +45,14 @@ function LoginInner() {
       });
       const data = await res.json();
       if (!res.ok) {
+        // If an OTP was already sent, let the user enter it rather than showing
+        // a blocking error.
+        if (data.requiresOtp) {
+          setStep("otp");
+          setResendIn(Math.ceil((data.retryAfterMs ?? 30000) / 1000));
+          setInfo("A code was already sent to your email.");
+          return;
+        }
         setError(data.error ?? "Sign in failed");
         return;
       }
@@ -122,21 +130,7 @@ function LoginInner() {
       <div style={styles.card}>
         <div style={styles.brand}>
           <span style={styles.logo}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <path d="M12 21c5-2 8-6 8-11V5l-8-2-8 2v5c0 5 3 9 8 11Z" fill="url(#g)" />
-              <path
-                d="M12 7v9M9 10c1.5 0 3 .8 3 3M15 10c-1.5 0-3 .8-3 3"
-                stroke="#04140a"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-              <defs>
-                <linearGradient id="g" x1="4" y1="3" x2="20" y2="21">
-                  <stop stopColor="#34d399" />
-                  <stop offset="1" stopColor="#16a34a" />
-                </linearGradient>
-              </defs>
-            </svg>
+            <img src="/Algaetree.png" alt="AlgaeTree" style={{ width: 20, height: 20, borderRadius: 5, display: "block" }} />
           </span>
           <span style={styles.brandText}>AlgaeTree</span>
         </div>

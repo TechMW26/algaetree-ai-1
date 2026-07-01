@@ -19,6 +19,8 @@ const rise = {
 const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
 const clampPercent = (value: number) => Math.min(Math.max(value, 0), 100);
 const clampNumber = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const DASH_BASE_WIDTH = 1366;
+const DASH_BASE_HEIGHT = 900;
 
 type ControlPanelTab =
   | "flow"
@@ -677,7 +679,7 @@ function DashboardClock() {
 function DashboardPageContent() {
   const searchParams = useSearchParams();
   const selectedPod = searchParams.get("pod");
-  const selectedTreeId = selectedPod === "2" ? "AT00A0002" : "AT00A0001";
+  const selectedTreeId = searchParams.get("tree") || (selectedPod === "2" ? "AT00A0002" : "AT00A0001");
   const d = useLiveData(selectedTreeId);
   const router = useRouter();
   const [navigating, setNavigating] = useState(false);
@@ -704,6 +706,7 @@ function DashboardPageContent() {
     Motor4Volume: 0,
     Motor5Volume: 0,
   });
+  const [viewport, setViewport] = useState({ width: DASH_BASE_WIDTH, height: DASH_BASE_HEIGHT });
   // Refs mirror the latest draft state so commit handlers (whose closures are
   // captured at mousedown time by the knob's drag listeners) always read the
   // most recently dragged-to value instead of the value at drag start.
@@ -860,6 +863,15 @@ function DashboardPageContent() {
         dialBootTimerRef.current = null;
       }
     };
+  }, []);
+
+  useEffect(() => {
+    function syncViewport() {
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+    }
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
   useEffect(() => {
@@ -1128,6 +1140,17 @@ function DashboardPageContent() {
     <svg key="t3" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>,
     <svg key="t4" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><path d="M6 6h.01M6 18h.01" /></svg>,
   ];
+  const treeOffline = d.location !== "Loading..." && !d.networkUp;
+  const dashboardScale = Math.min(1, viewport.width / DASH_BASE_WIDTH, viewport.height / DASH_BASE_HEIGHT);
+  const scaledDashboard = dashboardScale < 0.999;
+  const dashboardContentScaleStyle: React.CSSProperties = scaledDashboard
+    ? {
+        width: DASH_BASE_WIDTH,
+        height: DASH_BASE_HEIGHT,
+        transform: `translateX(${Math.max(0, (viewport.width - DASH_BASE_WIDTH * dashboardScale) / 2)}px) scale(${dashboardScale})`,
+        transformOrigin: "top left",
+      }
+    : { width: "100%", height: "100%" };
 
   return (
     <div className="dash-fullscreen flex flex-col" style={{ background: "var(--bg)" }}>
@@ -1158,6 +1181,13 @@ function DashboardPageContent() {
         <div className="orb orb-2" />
         <div className="orb orb-3" />
       </div>
+
+      <div
+        style={{
+          ...dashboardContentScaleStyle,
+          ...(treeOffline ? offlineContentStyle : dashboardContentStyle),
+        }}
+      >
 
       {/* Fullscreen loading overlay */}
       {navigating && (
@@ -1233,6 +1263,7 @@ function DashboardPageContent() {
       )}
 
       {/* ────── NAVBAR ────── */}
+      <div style={dashboardHeaderFadeStyle} />
       <motion.nav
         className="card relative z-10 flex items-center justify-between dash-navbar"
         style={{ margin: "20px 24px 0", padding: "14px 28px", borderRadius: 20 }}
@@ -1359,7 +1390,7 @@ function DashboardPageContent() {
       {/* ────── BENTO GRID ────── */}
       <AnimatePresence mode="wait">
         <motion.main
-          className="relative z-10 flex-1 grid overflow-hidden dash-grid"
+          className="relative z-10 flex-1 grid dash-grid"
           style={{
             padding: "16px 20px 8px",
             gap: 14,
@@ -2542,9 +2573,157 @@ function DashboardPageContent() {
           </motion.footer>
         </motion.main>
       </AnimatePresence>
+      </div>
+
+      {treeOffline && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          style={offlineOverlayStyle}
+        >
+          <div style={offlinePanelStyle}>
+            <div style={offlineIconStyle}>
+              <svg width="34" height="34" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 9v4" />
+                <path d="M12 17h.01" />
+                <path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0Z" />
+              </svg>
+            </div>
+            <p style={offlineTitleStyle}>Tree is offline</p>
+            <p style={offlineCopyStyle}>
+              This dashboard is paused because the selected AlgaeTree is not reporting live data.
+            </p>
+            <p style={offlineMetaStyle}>Last online: {d.lastOnline}</p>
+            <div style={offlineActionsStyle}>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                style={offlineButtonStyle}
+              >
+                Check connection
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                style={offlineSecondaryButtonStyle}
+              >
+                Go to dashboard
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }
+
+const dashboardContentStyle: React.CSSProperties = {
+  position: "relative",
+  height: "100%",
+  display: "flex",
+  flexDirection: "column",
+};
+
+const dashboardHeaderFadeStyle: React.CSSProperties = {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: 0,
+  height: 132,
+  zIndex: 8,
+  pointerEvents: "none",
+  background: "linear-gradient(180deg, rgba(246,248,251,0.96) 0%, rgba(246,248,251,0.70) 48%, rgba(246,248,251,0) 100%)",
+  backdropFilter: "blur(10px)",
+  WebkitBackdropFilter: "blur(10px)",
+  maskImage: "linear-gradient(180deg, #000 0%, #000 58%, transparent 100%)",
+  WebkitMaskImage: "linear-gradient(180deg, #000 0%, #000 58%, transparent 100%)",
+};
+
+const offlineContentStyle: React.CSSProperties = {
+  ...dashboardContentStyle,
+  filter: "grayscale(1) blur(2px)",
+  opacity: 0.42,
+  pointerEvents: "none",
+};
+
+const offlineOverlayStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 160,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 24,
+  background: "rgba(246,248,251,0.32)",
+  backdropFilter: "blur(10px)",
+  WebkitBackdropFilter: "blur(10px)",
+};
+
+const offlinePanelStyle: React.CSSProperties = {
+  width: "min(100%, 420px)",
+  borderRadius: 24,
+  border: "1px solid rgba(249,115,22,0.24)",
+  background: "rgba(255,255,255,0.92)",
+  boxShadow: "0 24px 80px rgba(15,23,42,0.22)",
+  padding: "30px 28px",
+  textAlign: "center",
+};
+
+const offlineIconStyle: React.CSSProperties = {
+  width: 70,
+  height: 70,
+  margin: "0 auto 18px",
+  borderRadius: 24,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "rgba(249,115,22,0.12)",
+};
+
+const offlineTitleStyle: React.CSSProperties = {
+  color: "#0f172a",
+  fontSize: 26,
+  fontWeight: 900,
+};
+
+const offlineCopyStyle: React.CSSProperties = {
+  marginTop: 10,
+  color: "#475569",
+  fontSize: 14,
+  fontWeight: 600,
+  lineHeight: 1.6,
+};
+
+const offlineMetaStyle: React.CSSProperties = {
+  marginTop: 14,
+  color: "#64748b",
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const offlineActionsStyle: React.CSSProperties = {
+  marginTop: 22,
+  display: "flex",
+  flexWrap: "wrap",
+  justifyContent: "center",
+  gap: 12,
+};
+
+const offlineButtonStyle: React.CSSProperties = {
+  border: "none",
+  borderRadius: 999,
+  padding: "12px 18px",
+  background: "linear-gradient(135deg,#f97316,#ea580c)",
+  color: "#fff",
+  fontSize: 14,
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const offlineSecondaryButtonStyle: React.CSSProperties = {
+  ...offlineButtonStyle,
+  background: "#0f172a",
+};
 
 export default function DashboardPage() {
   return (

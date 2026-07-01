@@ -1,9 +1,10 @@
 import nodemailer, { type Transporter } from "nodemailer";
 
 let cachedTransporter: Transporter | null = null;
+let transporterReady = false;
 
-function getTransporter(): Transporter | null {
-  if (cachedTransporter) return cachedTransporter;
+async function getTransporter(): Promise<Transporter | null> {
+  if (cachedTransporter && transporterReady) return cachedTransporter;
 
   const host = process.env.SMTP_HOST;
   const user = process.env.SMTP_USER;
@@ -18,6 +19,20 @@ function getTransporter(): Transporter | null {
     auth: { user, pass },
   });
 
+  // Verify the connection so credential / network issues surface early.
+  try {
+    await cachedTransporter.verify();
+    transporterReady = true;
+    // eslint-disable-next-line no-console
+    console.info(`[SMTP] Connected to ${host} as ${user}`);
+  } catch {
+    cachedTransporter = null;
+    transporterReady = false;
+    throw new Error(
+      `SMTP connection failed for ${user}@${host}. Check SMTP_USER / SMTP_PASS in your .env`,
+    );
+  }
+
   return cachedTransporter;
 }
 
@@ -26,7 +41,14 @@ function getTransporter(): Transporter | null {
  * SMTP is not configured so local development still works.
  */
 export async function sendOtpEmail(to: string, otp: string): Promise<void> {
-  const transporter = getTransporter();
+  let transporter: Transporter | null;
+  try {
+    transporter = await getTransporter();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[OTP] Failed to send code to ${to}:`, err instanceof Error ? err.message : err);
+    throw err;
+  }
 
   if (!transporter) {
     // eslint-disable-next-line no-console
@@ -36,12 +58,13 @@ export async function sendOtpEmail(to: string, otp: string): Promise<void> {
 
   const from = process.env.SMTP_FROM ?? "AlgaeTree <no-reply@algaetree.ai>";
 
-  await transporter.sendMail({
-    from,
-    to,
-    subject: "Your AlgaeTree verification code",
-    text: `Your verification code is ${otp}. It expires in 5 minutes.`,
-    html: `
+  try {
+    await transporter.sendMail({
+      from,
+      to,
+      subject: "Your AlgaeTree verification code",
+      text: `Your verification code is ${otp}. It expires in 5 minutes.`,
+      html: `
       <div style="font-family:Inter,Arial,sans-serif;max-width:420px;margin:0 auto;padding:24px;color:#0f172a">
         <h2 style="margin:0 0 12px;color:#16a34a">AlgaeTree</h2>
         <p style="margin:0 0 16px;font-size:14px;color:#334155">Use the code below to complete your sign in.</p>
@@ -49,5 +72,14 @@ export async function sendOtpEmail(to: string, otp: string): Promise<void> {
         <p style="margin:16px 0 0;font-size:12px;color:#64748b">This code expires in 5 minutes. If you didn't request it, you can ignore this email.</p>
       </div>
     `,
-  });
+    });
+    // eslint-disable-next-line no-console
+    console.info(`[OTP] Code sent to ${to}`);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[OTP] Failed to send email to ${to}:`, err instanceof Error ? err.message : err);
+    throw new Error(
+      `Failed to send OTP email to ${to}. The SMTP server rejected the request.`,
+    );
+  }
 }

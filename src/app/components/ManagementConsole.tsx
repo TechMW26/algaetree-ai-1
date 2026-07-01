@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "./AuthGuard";
 
@@ -119,8 +120,10 @@ interface Tree {
   treeId: string;
   name: string;
   location: string;
+  city?: string;
   lat: number;
   lng: number;
+  isAi?: boolean;
 }
 
 interface ManagedUser {
@@ -131,8 +134,25 @@ interface ManagedUser {
   createdBy: string | null;
 }
 
+function reconcileTrees(current: Tree[], incoming: Tree[]): Tree[] {
+  const currentById = new Map(current.map((t) => [t.treeId, t]));
+  let changed = current.length !== incoming.length;
+  const next = incoming.map((tree) => {
+    const existing = currentById.get(tree.treeId);
+    if (!existing) {
+      changed = true;
+      return tree;
+    }
+    const same = JSON.stringify(existing) === JSON.stringify(tree);
+    if (!same) changed = true;
+    return same ? existing : tree;
+  });
+  return changed ? next : current;
+}
+
 export default function ManagementConsole({ mode }: { mode: "super" | "admin" }) {
   const { user, logout } = useAuth();
+  const [activeView, setActiveView] = useState<"overview" | "create" | "users" | "access" | "registry">("overview");
   const [trees, setTrees] = useState<Tree[]>([]);
   const [treesAll, setTreesAll] = useState(false);
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -145,10 +165,19 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
   const [accessAll, setAccessAll] = useState(false);
   const [selectedTrees, setSelectedTrees] = useState<string[]>([]);
 
+  // tree registry form
+  const [treeId, setTreeId] = useState("");
+  const [treeName, setTreeName] = useState("");
+  const [treeLocation, setTreeLocation] = useState("");
+  const [treeCity, setTreeCity] = useState("");
+  const [treeLat, setTreeLat] = useState("");
+  const [treeLng, setTreeLng] = useState("");
+
   // assignment editor
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [editAccessAll, setEditAccessAll] = useState(false);
   const [editTrees, setEditTrees] = useState<string[]>([]);
+  const [treeSearch, setTreeSearch] = useState("");
 
   const notify = (type: "ok" | "err", text: string) => {
     setMessage({ type, text });
@@ -159,8 +188,8 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
     const res = await fetch("/api/algaetrees", { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
-      setTrees(data.trees ?? []);
-      setTreesAll(Boolean(data.all));
+      setTrees((current) => reconcileTrees(current, data.trees ?? []));
+      setTreesAll(true);
     }
   }, []);
 
@@ -175,6 +204,8 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
   useEffect(() => {
     void loadTrees();
     void loadUsers();
+    const refreshId = setInterval(() => void loadTrees(), 10000);
+    return () => clearInterval(refreshId);
   }, [loadTrees, loadUsers]);
 
   const toggleTree = (id: string, list: string[], setList: (v: string[]) => void) => {
@@ -186,11 +217,13 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
     setBusy(true);
     try {
       const payload: Record<string, unknown> = { email, role };
+      const validTreeIds = new Set(trees.map((t) => t.treeId));
+      const resolvedSelectedTrees = selectedTrees.filter((id) => validTreeIds.has(id));
       if (role === "ADMIN") {
         payload.accessType = accessAll ? "ALL" : "CUSTOM";
-        if (!accessAll) payload.treeIds = selectedTrees;
+        if (!accessAll) payload.treeIds = resolvedSelectedTrees;
       } else {
-        payload.treeIds = selectedTrees;
+        payload.treeIds = resolvedSelectedTrees;
       }
       const res = await fetch("/api/users", {
         method: "POST",
@@ -207,6 +240,46 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
       setSelectedTrees([]);
       setAccessAll(false);
       await loadUsers();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createTree = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const lat = Number(treeLat);
+      const lng = Number(treeLng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        notify("err", "Latitude and longitude must be valid numbers");
+        return;
+      }
+      const res = await fetch("/api/algaetrees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          treeId,
+          name: treeName,
+          location: treeLocation,
+          city: treeCity,
+          lat,
+          lng,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        notify("err", data.error ?? "Failed to create AlgaeTree");
+        return;
+      }
+      notify("ok", `Created ${data.tree.treeId}`);
+      setTreeId("");
+      setTreeName("");
+      setTreeLocation("");
+      setTreeCity("");
+      setTreeLat("");
+      setTreeLng("");
+      await loadTrees();
     } finally {
       setBusy(false);
     }
@@ -244,11 +317,13 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
     setBusy(true);
     try {
       const payload: Record<string, unknown> = { userId: editingUser._id };
+      const validTreeIds = new Set(trees.map((t) => t.treeId));
+      const resolvedEditTrees = editTrees.filter((id) => validTreeIds.has(id));
       if (editingUser.role === "ADMIN") {
         payload.accessType = editAccessAll ? "ALL" : "CUSTOM";
-        if (!editAccessAll) payload.treeIds = editTrees;
+        if (!editAccessAll) payload.treeIds = resolvedEditTrees;
       } else {
-        payload.treeIds = editTrees;
+        payload.treeIds = resolvedEditTrees;
       }
       const res = await fetch("/api/assignments", {
         method: "POST",
@@ -269,126 +344,184 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
 
   const title = mode === "super" ? "Super Admin Console" : "Admin Console";
   const canCreateAdmin = mode === "super";
+  const activeUsers = users.filter((u) => u.isActive).length;
 
   const visibleTrees = useMemo(() => trees, [trees]);
 
+  const registryFiltered = useMemo(() => {
+    const q = treeSearch.trim().toLowerCase();
+    if (!q) return trees;
+    return trees.filter(
+      (t) =>
+        t.treeId.toLowerCase().includes(q) ||
+        t.name.toLowerCase().includes(q) ||
+        t.location.toLowerCase().includes(q),
+    );
+  }, [trees, treeSearch]);
+
   return (
     <div style={s.page}>
-      <header style={s.header}>
+      <aside style={s.sidebar}>
         <div>
           <h1 style={s.h1}>{title}</h1>
           <p style={s.sub}>{user?.email}</p>
         </div>
-        <div style={s.headerActions}>
-          <a href="/" style={s.backLink}>← Map</a>
+        <nav style={s.nav}>
+          {[
+            ["overview", "Overview"],
+            ["create", `Create ${canCreateAdmin ? "User" : "Customer"}`],
+            ["users", "Users"],
+            ["access", "Tree Access"],
+            ["registry", "Tree Registry"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveView(id as typeof activeView)}
+              style={{ ...s.navItem, ...(activeView === id ? s.navItemActive : null) }}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+        <div style={s.sidebarActions}>
+          <Link href="/" style={s.backLink}>← Dashboard</Link>
           <button onClick={() => void logout()} style={s.logout}>Sign out</button>
         </div>
-      </header>
+      </aside>
 
-      {message && (
-        <div style={{ ...s.toast, ...(message.type === "ok" ? s.toastOk : s.toastErr) }}>
-          {message.text}
-        </div>
-      )}
+      <main style={s.main}>
+        <header style={s.header}>
+          <div>
+            <h2 style={s.pageTitle}>{activeView === "overview" ? "Operations" : activeView === "create" ? "Create user" : activeView === "users" ? "Manage users" : activeView === "access" ? "Tree access" : "Tree registry"}</h2>
+            <p style={s.sub}>Manage users, access scopes, and DB-backed AlgaeTree placement.</p>
+          </div>
+        </header>
 
-      <div style={s.grid}>
-        {/* Create user */}
-        <section style={s.card}>
-          <h2 style={s.h2}>Create {canCreateAdmin ? "user" : "customer"}</h2>
-          <form onSubmit={createUser} style={s.form}>
-            <input style={s.input} type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-            {canCreateAdmin && (
-              <div>
-                <span style={s.fieldLabel}>Role</span>
-                <Dropdown
-                  value={role}
-                  onChange={(v) => setRole(v as "ADMIN" | "CUSTOMER")}
-                  options={[
-                    { value: "ADMIN", label: "Admin" },
-                    { value: "CUSTOMER", label: "Customer" },
-                  ]}
-                />
+        {message && (
+          <div style={{ ...s.toast, ...(message.type === "ok" ? s.toastOk : s.toastErr) }}>
+            {message.text}
+          </div>
+        )}
+
+        {activeView === "overview" && (
+          <section style={s.dashboardGrid}>
+            {[
+              ["Users", users.length],
+              ["Active users", activeUsers],
+              ["AlgaeTrees", trees.length],
+              ["AI trees", trees.filter((t) => t.isAi).length],
+            ].map(([label, value]) => (
+              <div key={label} style={s.metricCard}>
+                <span style={s.muted}>{label}</span>
+                <strong style={s.metricValue}>{value}</strong>
+              </div>
+            ))}
+          </section>
+        )}
+
+        {activeView === "create" && (
+          <section style={s.wideCard}>
+            <h2 style={s.h2}>Create {canCreateAdmin ? "user" : "customer"}</h2>
+            <form onSubmit={createUser} style={s.formWide}>
+              <input style={s.input} type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              {canCreateAdmin && (
+                <div>
+                  <span style={s.fieldLabel}>Role</span>
+                  <Dropdown
+                    value={role}
+                    onChange={(v) => setRole(v as "ADMIN" | "CUSTOMER")}
+                    options={[
+                      { value: "ADMIN", label: "Admin" },
+                      { value: "CUSTOMER", label: "Customer" },
+                    ]}
+                  />
+                </div>
+              )}
+              {role === "ADMIN" && canCreateAdmin && (
+                <Checkbox checked={accessAll} onChange={() => setAccessAll(!accessAll)} label="All AlgaeTrees" sub="Includes future trees" />
+              )}
+              {!(role === "ADMIN" && accessAll) && (
+                <div style={s.treeListLarge}>
+                  <span style={s.treeListLabel}>Assign AlgaeTrees</span>
+                  {visibleTrees.length === 0 && <span style={s.muted}>No trees available</span>}
+                  {visibleTrees.map((t) => (
+                    <Checkbox key={t.treeId} checked={selectedTrees.includes(t.treeId)} onChange={() => toggleTree(t.treeId, selectedTrees, setSelectedTrees)} label={<>{t.name}{t.isAi && <span style={s.aiBadge}>AI</span>}</>} sub={t.treeId} />
+                  ))}
+                </div>
+              )}
+              <button type="submit" disabled={busy} style={s.primary}>{busy ? "Saving…" : "Create"}</button>
+            </form>
+          </section>
+        )}
+
+        {(activeView === "users" || activeView === "access") && (
+          <section style={s.wideCard}>
+            <h2 style={s.h2}>{activeView === "users" ? "Users" : "Tree access"}</h2>
+            <div style={s.scrollListLarge}>
+              {users.length === 0 && <span style={s.muted}>No users yet</span>}
+              {users.map((u) => (
+                <div key={u._id} style={s.userRow}>
+                  <div>
+                    <div style={s.userEmail}>{u.email}</div>
+                    <div style={s.userMeta}>
+                      <span style={s.badge}>{u.role}</span>
+                      <span style={{ color: u.isActive ? "#4ade80" : "#f87171" }}>{u.isActive ? "Active" : "Disabled"}</span>
+                    </div>
+                  </div>
+                  {u.role !== "SUPER_ADMIN" && (
+                    <div style={s.userActions}>
+                      <button style={s.smallBtn} onClick={() => void openEditor(u)}>Access</button>
+                      <button style={s.smallBtn} onClick={() => void toggleActive(u)}>{u.isActive ? "Disable" : "Enable"}</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeView === "registry" && (
+          <section style={s.registryLayout}>
+            {mode === "super" && (
+              <div style={s.wideCard}>
+                <h2 style={s.h2}>Add AlgaeTree to DB</h2>
+                <form onSubmit={createTree} style={s.form}>
+                  <input style={s.input} placeholder="Tree ID" required value={treeId} onChange={(e) => setTreeId(e.target.value)} />
+                  <input style={s.input} placeholder="Name" required value={treeName} onChange={(e) => setTreeName(e.target.value)} />
+                  <input style={s.input} placeholder="Location" value={treeLocation} onChange={(e) => setTreeLocation(e.target.value)} />
+                  <input style={s.input} placeholder="City" value={treeCity} onChange={(e) => setTreeCity(e.target.value)} />
+                  <div style={s.twoCols}>
+                    <input style={s.input} placeholder="Latitude" required value={treeLat} onChange={(e) => setTreeLat(e.target.value)} />
+                    <input style={s.input} placeholder="Longitude" required value={treeLng} onChange={(e) => setTreeLng(e.target.value)} />
+                  </div>
+                  <button type="submit" disabled={busy} style={s.primary}>{busy ? "Saving…" : "Add tree"}</button>
+                </form>
               </div>
             )}
-
-            {role === "ADMIN" && canCreateAdmin && (
-              <Checkbox
-                checked={accessAll}
-                onChange={() => setAccessAll(!accessAll)}
-                label="All AlgaeTrees"
-                sub="Includes future trees"
-              />
-            )}
-
-            {!(role === "ADMIN" && accessAll) && (
-              <div style={s.treeList}>
-                <span style={s.treeListLabel}>Assign AlgaeTrees</span>
-                {visibleTrees.length === 0 && <span style={s.muted}>No trees available</span>}
-                {visibleTrees.map((t) => (
-                  <Checkbox
-                    key={t.treeId}
-                    checked={selectedTrees.includes(t.treeId)}
-                    onChange={() => toggleTree(t.treeId, selectedTrees, setSelectedTrees)}
-                    label={t.name}
-                    sub={t.treeId}
-                  />
+            <div style={s.wideCard}>
+              <h2 style={s.h2}>AlgaeTrees {treesAll && <span style={s.muted}>(DB)</span>}</h2>
+              <input style={s.input} type="text" placeholder="Search trees…" value={treeSearch} onChange={(e) => setTreeSearch(e.target.value)} />
+              <div style={s.scrollListLarge}>
+                {registryFiltered.length === 0 && <span style={s.muted}>No trees match</span>}
+                {registryFiltered.map((t) => (
+                  <div key={t.treeId} style={s.userRow}>
+                    <div>
+                      <div style={s.userEmail}>{t.name}{t.isAi && <span style={s.aiBadge}>AI</span>}</div>
+                      <div style={s.userMeta}>
+                        <span style={s.badge}>{t.treeId}</span>
+                        <span style={s.muted}>{t.location || t.city || "No location label"}</span>
+                        <span style={s.muted}>{t.lat}, {t.lng}</span>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
-            )}
+            </div>
+          </section>
+        )}
 
-            <button type="submit" disabled={busy} style={s.primary}>
-              {busy ? "Saving…" : "Create"}
-            </button>
-          </form>
-        </section>
-
-        {/* Users list */}
-        <section style={s.card}>
-          <h2 style={s.h2}>Users</h2>
-          <div style={s.userList}>
-            {users.length === 0 && <span style={s.muted}>No users yet</span>}
-            {users.map((u) => (
-              <div key={u._id} style={s.userRow}>
-                <div>
-                  <div style={s.userEmail}>{u.email}</div>
-                  <div style={s.userMeta}>
-                    <span style={s.badge}>{u.role}</span>
-                    <span style={{ color: u.isActive ? "#4ade80" : "#f87171" }}>
-                      {u.isActive ? "Active" : "Disabled"}
-                    </span>
-                  </div>
-                </div>
-                {u.role !== "SUPER_ADMIN" && (
-                  <div style={s.userActions}>
-                    <button style={s.smallBtn} onClick={() => void openEditor(u)}>Access</button>
-                    <button style={s.smallBtn} onClick={() => void toggleActive(u)}>
-                      {u.isActive ? "Disable" : "Enable"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Tree registry */}
-        <section style={s.card}>
-          <h2 style={s.h2}>AlgaeTrees {treesAll && <span style={s.muted}>(all)</span>}</h2>
-          <div style={s.userList}>
-            {visibleTrees.map((t) => (
-              <div key={t.treeId} style={s.userRow}>
-                <div>
-                  <div style={s.userEmail}>{t.name}</div>
-                  <div style={s.userMeta}>
-                    <span style={s.badge}>{t.treeId}</span>
-                    <span style={s.muted}>{t.location}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
+      </main>
 
       {/* Assignment editor modal */}
       {editingUser && (
@@ -410,7 +543,7 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
                     key={t.treeId}
                     checked={editTrees.includes(t.treeId)}
                     onChange={() => toggleTree(t.treeId, editTrees, setEditTrees)}
-                    label={t.name}
+                    label={<>{t.name}{t.isAi && <span style={s.aiBadge}>AI</span>}</>}
                     sub={t.treeId}
                   />
                 ))}
@@ -432,21 +565,94 @@ const s: Record<string, React.CSSProperties> = {
     minHeight: "100vh",
     background: "radial-gradient(1200px 600px at 15% -10%, rgba(34,197,94,0.10), transparent 55%), radial-gradient(1000px 500px at 100% 0%, rgba(56,189,248,0.07), transparent 50%), var(--bg)",
     color: "var(--text-1)",
-    padding: "28px 28px 48px",
+    padding: 24,
+    display: "grid",
+    gridTemplateColumns: "280px minmax(0, 1fr)",
+    gap: 20,
   },
+  sidebar: {
+    minHeight: "calc(100vh - 48px)",
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 22,
+    padding: 20,
+    display: "flex",
+    flexDirection: "column",
+    gap: 22,
+    position: "sticky",
+    top: 24,
+  },
+  nav: { display: "flex", flexDirection: "column", gap: 8 },
+  navItem: {
+    width: "100%",
+    border: "1px solid transparent",
+    borderRadius: 14,
+    background: "transparent",
+    color: "var(--text-2)",
+    padding: "12px 14px",
+    textAlign: "left",
+    fontSize: 14,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  navItemActive: {
+    background: "rgba(34,197,94,0.13)",
+    borderColor: "rgba(34,197,94,0.24)",
+    color: "#16a34a",
+  },
+  sidebarActions: { marginTop: "auto", display: "grid", gap: 10 },
+  main: { minWidth: 0, display: "flex", flexDirection: "column", gap: 16 },
+  pageTitle: { margin: 0, fontSize: 22, fontWeight: 900, color: "var(--text-1)" },
+  dashboardGrid: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 14 },
+  metricCard: {
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 18,
+    padding: 18,
+    minHeight: 110,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+  },
+  metricValue: { fontSize: 34, fontWeight: 900, color: "var(--text-1)" },
+  wideCard: {
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 18,
+    padding: 20,
+    boxShadow: "0 16px 40px -28px rgba(0,0,0,0.45)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+  },
+  registryLayout: {
+    display: "grid",
+    gridTemplateColumns: "minmax(300px, 420px) minmax(0, 1fr)",
+    gap: 16,
+    alignItems: "start",
+  },
+  formWide: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 },
+  twoCols: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
+  scrollListLarge: { display: "flex", flexDirection: "column", gap: 8, maxHeight: "calc(100vh - 250px)", overflowY: "auto", paddingRight: 4 },
+  treeListLarge: { display: "flex", flexDirection: "column", gap: 4, maxHeight: 360, overflowY: "auto", padding: 10, background: "var(--surface-hover)", borderRadius: 12, border: "1px solid var(--border)" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 },
   headerActions: { display: "flex", alignItems: "center", gap: 10 },
   h1: { margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: "var(--text-1)" },
   sub: { margin: "4px 0 0", color: "var(--text-2)", fontSize: 13 },
   backLink: { textDecoration: "none", color: "var(--text-1)", background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", fontSize: 13, fontWeight: 600 },
   logout: { background: "var(--surface-hover)", color: "var(--text-1)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontWeight: 600 },
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18 },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18, alignItems: "start" },
   card: {
     background: "var(--surface)",
     border: "1px solid var(--border)",
     borderRadius: 18,
     padding: 20,
     boxShadow: "0 16px 40px -28px rgba(0,0,0,0.45)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    maxHeight: "calc(100vh - 160px)",
+    overflow: "hidden",
   },
   h2: { margin: "0 0 14px", fontSize: 16, fontWeight: 700, color: "var(--text-1)" },
   form: { display: "flex", flexDirection: "column", gap: 12 },
@@ -487,7 +693,7 @@ const s: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     transition: "background .15s ease, border-color .15s ease",
   },
-  checkBoxOn: { background: "linear-gradient(135deg,#22c55e,#16a34a)", borderColor: "#22c55e" },
+  checkBoxOn: { background: "linear-gradient(135deg,#22c55e,#16a34a)", borderWidth: "1.5px", borderStyle: "solid", borderColor: "#22c55e" },
   checkLabel: { display: "flex", flexDirection: "column", lineHeight: 1.25, fontSize: 13.5, fontWeight: 600 },
   checkSub: { color: "var(--text-2)", fontSize: 11, fontWeight: 500 },
   /* custom dropdown */
@@ -535,8 +741,23 @@ const s: Record<string, React.CSSProperties> = {
   treeListLabel: { fontSize: 12, color: "var(--text-2)", fontWeight: 600, marginBottom: 2 },
   treeItem: { display: "flex", alignItems: "center", gap: 8, fontSize: 13 },
   muted: { color: "var(--text-2)", fontSize: 12 },
+  aiBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    marginLeft: 6,
+    fontSize: 10,
+    fontWeight: 800,
+    letterSpacing: 0.5,
+    background: "linear-gradient(135deg,#818cf8,#6366f1)",
+    color: "#fff",
+    borderRadius: 5,
+    padding: "2px 7px",
+    verticalAlign: "middle",
+    lineHeight: 1.3,
+  },
   primary: { background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#04140a", fontWeight: 700, border: "none", borderRadius: 12, padding: "11px 14px", cursor: "pointer", fontSize: 14, marginTop: 2 },
   userList: { display: "flex", flexDirection: "column", gap: 8 },
+  scrollList: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 420, overflowY: "auto", paddingRight: 4 },
   userRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 13px", background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: 12 },
   userEmail: { fontSize: 14, fontWeight: 600, color: "var(--text-1)" },
   userMeta: { display: "flex", gap: 8, alignItems: "center", marginTop: 4, fontSize: 12 },

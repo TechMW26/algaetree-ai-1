@@ -3,16 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useLiveData, type LiveData } from "../hooks/useLiveData";
 import TreeSelect from "./TreeSelect";
 
-type Pod = {
-  id: number;
+type MapTree = {
   treeId: string;
+  name: string;
+  location: string;
+  city?: string;
   lat: number;
   lng: number;
-  fallbackLocation: string;
-  country: "India" | "UAE";
+  online: boolean;
+  lastOnline?: string;
+  isAi?: boolean;
 };
 
 const COUNTRY_GEOJSON_URLS = {
@@ -20,35 +22,12 @@ const COUNTRY_GEOJSON_URLS = {
   UAE: "https://raw.githubusercontent.com/mledoze/countries/master/data/are.geo.json",
 } as const;
 
-const PODS: Pod[] = [
-  {
-    id: 1,
-    treeId: "AT00A0001",
-    lat: 23.2376013,
-    lng: 77.4010502,
-    fallbackLocation: "Roshanpura Square, Bhopal",
-    country: "India",
-  },
-  {
-    id: 2,
-    treeId: "AT00A0002",
-    lat: 23.258690000000000,
-    lng: 77.431160000000000,
-    fallbackLocation: "Swami Vivekananda Theme Park",
-    country: "India",
-  },
-];
-
 type PodPopupData = {
-  id: number;
   location: string;
   treeId: string;
-  efficiencyText: string;
-  aqiValue: number | null;
-  healthText: string;
-  maintenanceText: string;
   online: boolean;
   statusTitle: string;
+  lastOnline: string;
 };
 
 function escapeHtml(value: string): string {
@@ -60,48 +39,18 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
-function getHealthText(data: LiveData): string {
-  if (!data.networkUp) return "Offline";
-  if (data.error || data.sensorHealth < 70) return "Attention";
-  if (data.sensorHealth < 90) return "Stable";
-  return "Optimal";
-}
-
-function buildPodPopupData(pod: Pod, data: LiveData): PodPopupData {
-  const isLoading = data.location === "Loading..." && data.activeTreeId === pod.treeId;
-  const hasRequestedTree = data.activeTreeId === pod.treeId;
-
-  if (!hasRequestedTree && !isLoading) {
-    return {
-      id: pod.id,
-      location: pod.fallbackLocation,
-      treeId: pod.treeId,
-      efficiencyText: "--",
-      aqiValue: null,
-      healthText: "No Data",
-      maintenanceText: "--",
-      online: false,
-      statusTitle: "No live data",
-    };
-  }
-
+function buildPodPopupData(tree: MapTree): PodPopupData {
   return {
-    id: pod.id,
-    location: data.location === "Loading..." ? pod.fallbackLocation : data.location,
-    treeId: pod.treeId,
-    efficiencyText: `${Math.max(0, Math.round(data.efficiency))}%`,
-    aqiValue: Math.max(0, Math.round(data.aqi)),
-    healthText: getHealthText(data),
-    maintenanceText: `${Math.max(0, Math.round(data.maint))}d`,
-    online: isLoading ? true : data.networkUp,
-    statusTitle: isLoading ? "Loading live data" : data.networkUp ? "Online" : "Offline",
+    location: tree.location || tree.city || tree.name || tree.treeId,
+    treeId: tree.treeId,
+    online: tree.online,
+    statusTitle: tree.online ? "Online" : "Offline",
+    lastOnline: tree.lastOnline || "--",
   };
 }
 
 function buildPopupHtml(pod: PodPopupData): string {
-  const aqiColor = pod.aqiValue !== null && pod.aqiValue > 100 ? "#f97316" : "#22c55e";
   const statusColor = pod.online ? "#4ade80" : "#f97316";
-  const aqiText = pod.aqiValue === null ? "--" : String(pod.aqiValue);
 
   return `
     <div class="pod-card">
@@ -113,14 +62,28 @@ function buildPopupHtml(pod: PodPopupData): string {
         <span class="pod-status" title="${escapeHtml(pod.statusTitle)}" style="background:${statusColor}"></span>
       </div>
       <div class="pod-stats">
-        <div class="pod-stat"><span class="stat-label">Efficiency</span><span class="stat-value" style="color:#22c55e">${pod.efficiencyText}</span></div>
-        <div class="pod-stat"><span class="stat-label">AQI</span><span class="stat-value" style="color:${aqiColor}">${aqiText}</span></div>
-        <div class="pod-stat"><span class="stat-label">Health</span><span class="stat-value">${escapeHtml(pod.healthText)}</span></div>
-        <div class="pod-stat"><span class="stat-label">Next Maint.</span><span class="stat-value">${pod.maintenanceText}</span></div>
+        <div class="pod-stat"><span class="stat-label">Status</span><span class="stat-value" style="color:${statusColor}">${escapeHtml(pod.statusTitle)}</span></div>
+        <div class="pod-stat"><span class="stat-label">Last Online</span><span class="stat-value">${escapeHtml(pod.lastOnline)}</span></div>
       </div>
-      <button class="pod-action" data-pod="${pod.id}" type="button">View Dashboard →</button>
+      <button class="pod-action" data-tree="${escapeHtml(pod.treeId)}" type="button">View Dashboard →</button>
     </div>
   `;
+}
+
+function reconcileTrees(current: MapTree[], incoming: MapTree[]): MapTree[] {
+  const currentById = new Map(current.map((t) => [t.treeId, t]));
+  let changed = current.length !== incoming.length;
+  const next = incoming.map((tree) => {
+    const existing = currentById.get(tree.treeId);
+    if (!existing) {
+      changed = true;
+      return tree;
+    }
+    const same = JSON.stringify(existing) === JSON.stringify(tree);
+    if (!same) changed = true;
+    return same ? existing : tree;
+  });
+  return changed ? next : current;
 }
 
 const MAP_ASSET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -164,50 +127,48 @@ function writeCachedMapAsset(url: string, data: unknown): void {
 export default function NetworkMap() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<Record<number, L.Marker>>({});
+  const markersRef = useRef<Record<string, L.Marker>>({});
+  const markerIconRef = useRef<L.DivIcon | null>(null);
   const flyToTreeRef = useRef<
     ((t: { treeId: string; lat: number; lng: number }) => void) | null
   >(null);
-  const [assignedTrees, setAssignedTrees] = useState<
-    { treeId: string; name: string; lat: number; lng: number }[]
-  >([]);
+  const [assignedTrees, setAssignedTrees] = useState<MapTree[]>([]);
   const [treesLoaded, setTreesLoaded] = useState(false);
   const [selectedTreeId, setSelectedTreeId] = useState("");
-  const treeOne = useLiveData("AT00A0001");
-  const treeTwo = useLiveData("AT00A0002");
-  const livePodDataRef = useRef<Record<number, PodPopupData>>({
-    1: buildPodPopupData(PODS[0], treeOne),
-    2: buildPodPopupData(PODS[1], treeTwo),
-  });
-
-  livePodDataRef.current = {
-    1: buildPodPopupData(PODS[0], treeOne),
-    2: buildPodPopupData(PODS[1], treeTwo),
-  };
 
   // Fetch the AlgaeTrees assigned to the logged-in user for the dropdown.
   useEffect(() => {
     let active = true;
-    (async () => {
+    const loadTrees = async () => {
       try {
         const res = await fetch("/api/algaetrees", { cache: "no-store" });
         if (!res.ok || !active) return;
         const data = await res.json();
-        const trees = (data.trees ?? []) as {
+        const allTrees = (data.trees ?? []) as {
           treeId: string;
           name: string;
+          location: string;
+          city?: string;
           lat: number;
           lng: number;
+          online: boolean;
+          lastOnline?: string;
+          isAi?: boolean;
         }[];
-        if (active) setAssignedTrees(trees);
+        // Only show trees with valid coordinates on the map dropdown.
+        const mapped = allTrees.filter((t) => Number.isFinite(t.lat) && Number.isFinite(t.lng) && (t.lat || t.lng));
+        if (active) setAssignedTrees((current) => reconcileTrees(current, mapped));
       } catch {
         // Dropdown stays empty on failure; map still works.
       } finally {
         if (active) setTreesLoaded(true);
       }
-    })();
+    };
+    void loadTrees();
+    const refreshId = setInterval(() => void loadTrees(), 10000);
     return () => {
       active = false;
+      clearInterval(refreshId);
     };
   }, []);
 
@@ -223,7 +184,6 @@ export default function NetworkMap() {
       zoomAnimationThreshold: 20,
       zoomControl: false,
       attributionControl: false,
-      preferCanvas: true,
       wheelPxPerZoomLevel: 80,
     });
 
@@ -379,10 +339,8 @@ export default function NetworkMap() {
         });
     };
 
-    const countriesWithTrees = Array.from(new Set(PODS.map((pod) => pod.country)));
-    countriesWithTrees.forEach((country) => {
-      addCountryOutline(COUNTRY_GEOJSON_URLS[country]);
-    });
+    addCountryOutline(COUNTRY_GEOJSON_URLS.India);
+    addCountryOutline(COUNTRY_GEOJSON_URLS.UAE);
 
     // Recenter custom control — fits the map to highlighted countries.
     const RecenterControl = L.Control.extend({
@@ -418,6 +376,7 @@ export default function NetworkMap() {
       iconAnchor: [20, 20],
       popupAnchor: [0, -20],
     });
+    markerIconRef.current = algaeIcon;
 
     let zoomSequenceId = 0;
 
@@ -459,43 +418,6 @@ export default function NetworkMap() {
       nextStep(0);
     };
 
-    PODS.forEach((pod) => {
-      const marker = L.marker([pod.lat, pod.lng], { icon: algaeIcon }).addTo(map);
-
-      marker.bindPopup(buildPopupHtml(livePodDataRef.current[pod.id]), {
-        closeButton: false,
-        offset: [0, -10],
-      });
-      markersRef.current[pod.id] = marker;
-
-      marker.on("click", () => {
-        map.closePopup();
-        const currentZoom = map.getZoom();
-
-        // If already zoomed in, do not zoom out and back in.
-        // Just glide to the new pod and keep current zoom level.
-        if (currentZoom >= 16) {
-          map.flyTo([pod.lat, pod.lng], currentZoom, {
-            animate: true,
-            duration: 0.45,
-            easeLinearity: 0.35,
-            noMoveStart: true,
-          });
-
-          const handleMoveEnd = () => {
-            map.off("moveend", handleMoveEnd);
-            marker.openPopup();
-          };
-          map.on("moveend", handleMoveEnd);
-          return;
-        }
-
-        runSequentialZoom(pod.lat, pod.lng, () => {
-          marker.openPopup();
-        });
-      });
-    });
-
     const handleContainerClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
       const button = target?.closest(".pod-action") as HTMLButtonElement | null;
@@ -503,36 +425,30 @@ export default function NetworkMap() {
 
       event.preventDefault();
       event.stopPropagation();
-      const id = button.getAttribute("data-pod");
-      window.location.href = `/dashboard?pod=${id ?? ""}`;
+      const treeId = button.getAttribute("data-tree");
+      if (treeId) window.location.href = `/dashboard?tree=${encodeURIComponent(treeId)}`;
     };
 
     // Allow the dropdown (rendered outside this effect) to drive the map.
     flyToTreeRef.current = (t) => {
       map.closePopup();
-      const podEntry = PODS.find((p) => p.treeId === t.treeId);
-      if (podEntry) {
-        const marker = markersRef.current[podEntry.id];
-        const currentZoom = map.getZoom();
-        if (currentZoom >= 16) {
-          map.flyTo([podEntry.lat, podEntry.lng], currentZoom, {
-            animate: true,
-            duration: 0.45,
-            easeLinearity: 0.35,
-            noMoveStart: true,
-          });
-          const handleMoveEnd = () => {
-            map.off("moveend", handleMoveEnd);
-            marker?.openPopup();
-          };
-          map.on("moveend", handleMoveEnd);
-        } else {
-          runSequentialZoom(podEntry.lat, podEntry.lng, () => marker?.openPopup());
-        }
+      const marker = markersRef.current[t.treeId];
+      const currentZoom = map.getZoom();
+      if (currentZoom >= 16) {
+        map.flyTo([t.lat, t.lng], currentZoom, {
+          animate: true,
+          duration: 0.45,
+          easeLinearity: 0.35,
+          noMoveStart: true,
+        });
+        const handleMoveEnd = () => {
+          map.off("moveend", handleMoveEnd);
+          marker?.openPopup();
+        };
+        map.on("moveend", handleMoveEnd);
         return;
       }
-      // Registry tree without a dedicated marker: just center & zoom.
-      runSequentialZoom(t.lat, t.lng, () => {});
+      runSequentialZoom(t.lat, t.lng, () => marker?.openPopup());
     };
 
     containerRef.current.addEventListener("click", handleContainerClick);
@@ -544,35 +460,63 @@ export default function NetworkMap() {
       map.off("zoomend", updateLayerByZoom);
       containerRef.current?.removeEventListener("click", handleContainerClick);
       markersRef.current = {};
+      markerIconRef.current = null;
       flyToTreeRef.current = null;
       mapRef.current = null;
       map.remove();
     };
   }, []);
 
-  useEffect(() => {
-    Object.values(livePodDataRef.current).forEach((pod) => {
-      const marker = markersRef.current[pod.id];
-      if (!marker) return;
-      marker.setPopupContent(buildPopupHtml(pod));
-    });
-  });
-
-  // Show only the markers for AlgaeTrees the current user is assigned to.
+  // Draw markers dynamically from DB-backed tree metadata.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !treesLoaded) return;
-    const allowed = new Set(assignedTrees.map((t) => t.treeId));
-    PODS.forEach((pod) => {
-      const marker = markersRef.current[pod.id];
-      if (!marker) return;
-      const visible = allowed.has(pod.treeId);
-      if (visible && !map.hasLayer(marker)) {
-        marker.addTo(map);
-      } else if (!visible && map.hasLayer(marker)) {
+    const icon = markerIconRef.current;
+    if (!map || !icon || !treesLoaded) return;
+
+    const currentIds = new Set(assignedTrees.map((t) => t.treeId));
+    Object.entries(markersRef.current).forEach(([treeId, marker]) => {
+      if (!currentIds.has(treeId)) {
         map.removeLayer(marker);
+        delete markersRef.current[treeId];
       }
     });
+
+    const bounds = L.latLngBounds([]);
+    assignedTrees.forEach((tree) => {
+      bounds.extend([tree.lat, tree.lng]);
+      const popup = buildPopupHtml(buildPodPopupData(tree));
+      let marker = markersRef.current[tree.treeId];
+      if (!marker) {
+        marker = L.marker([tree.lat, tree.lng], { icon }).addTo(map);
+        marker.bindPopup(popup, { closeButton: false, offset: [0, -10] });
+        marker.on("click", () => {
+          const activeMarker = markersRef.current[tree.treeId];
+          if (!activeMarker) return;
+          map.closePopup();
+          const currentZoom = map.getZoom();
+          map.flyTo([tree.lat, tree.lng], Math.max(currentZoom, 16), {
+            animate: true,
+            duration: 0.45,
+            easeLinearity: 0.35,
+            noMoveStart: true,
+          });
+          const handleMoveEnd = () => {
+            map.off("moveend", handleMoveEnd);
+            activeMarker.openPopup();
+          };
+          map.on("moveend", handleMoveEnd);
+        });
+        markersRef.current[tree.treeId] = marker;
+      } else {
+        marker.setLatLng([tree.lat, tree.lng]);
+        marker.setPopupContent(popup);
+        if (!map.hasLayer(marker)) marker.addTo(map);
+      }
+    });
+
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [90, 90], animate: true, maxZoom: 7 });
+    }
   }, [assignedTrees, treesLoaded]);
 
   return (

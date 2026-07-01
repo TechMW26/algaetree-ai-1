@@ -1,7 +1,7 @@
 import { type NextRequest } from "next/server";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { User } from "@/lib/models/User";
-import { issueLoginOtp } from "@/lib/auth/otpService";
+import { issueLoginOtp, type IssueOtpResult } from "@/lib/auth/otpService";
 import { recordAudit } from "@/lib/auth/audit";
 import { resendOtpSchema } from "@/lib/validation/auth";
 import { ok, fail, getClientIp } from "@/lib/http";
@@ -34,7 +34,16 @@ export async function POST(req: NextRequest) {
     return ok({ message: "If an account exists, a new code was sent." });
   }
 
-  const result = await issueLoginOtp(user._id, user.email);
+  let result: IssueOtpResult;
+  try {
+    result = await issueLoginOtp(user._id, user.email);
+  } catch {
+    return fail(
+      "We couldn't send the verification code. The mail server may be unavailable. Please try again.",
+      502,
+    );
+  }
+
   if (!result.ok) {
     return fail("Please wait before requesting another code.", 429, {
       retryAfterMs: result.retryAfterMs,

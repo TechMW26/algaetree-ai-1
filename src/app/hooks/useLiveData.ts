@@ -379,7 +379,7 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
   );
 
   return {
-    activeTreeId: tree.DeviceID ?? treeId,
+    activeTreeId: treeId,
     location: getDisplayLocation(treeId, tree.Location),
     installationDate: tree.InstallationDate ?? "--/--/----",
     treeCount: noOfDevices,
@@ -482,6 +482,98 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
   };
 }
 
+function makeOfflineLiveData(treeId: string): LiveData {
+  return {
+    activeTreeId: treeId,
+    location: "Offline",
+    installationDate: "--/--/----",
+    treeCount: 0,
+    change: 0,
+    batteryPercentage: 0,
+    batteryCharging: false,
+    displayPin: "----",
+    wifiSsid: "Unknown",
+    wifiPassword: "",
+    error: true,
+    lastCheck: "--/--/---- --:--",
+    lastOnline: "--/--/---- --:--",
+    aqi: 0,
+    eco2: 0,
+    tds: 0,
+    tvoc: 0,
+    lTurbidity: 0,
+    uTurbidity: 0,
+    ldrStatus: { LDR1: false, LDR2: false, LDR3: false, LDR4: false },
+    ph: 0,
+    temp: 0,
+    do2: 0,
+    biomass: 0,
+    efficiency: 0,
+    volume: 0,
+    cycle: 0,
+    maint: 0,
+    co2: 0,
+    o2: 0,
+    air: 0,
+    uptime: "0d",
+    growth: 0,
+    cycleStartDate: "--/--/----",
+    cycleEndDate: "--/--/----",
+    cycleDaysRemaining: 0,
+    cycleExplorer: [],
+    ambientTemp: 0,
+    humidity: 0,
+    lightIntensity: 0,
+    co2Ambient: 0,
+    uvIndex: 0,
+    airQuality: 0,
+    photosynthRate: 0,
+    carbonFixRate: 0,
+    oxygenProd: 0,
+    energyUsage: 0,
+    waterUsage: 0,
+    nutrientEff: 0,
+    weeklyBiomass: [0, 0, 0, 0, 0, 0, 0],
+    weeklyEnergy: [0, 0, 0, 0, 0, 0, 0],
+    co2History: [0],
+    eco2History: [0],
+    tempHistory: [0],
+    lTurbidityHistory: [0],
+    uTurbidityHistory: [0],
+    historyLabels: ["P1"],
+    cpuTemp: 0,
+    cpuUsage: 0,
+    memUsage: 0,
+    diskUsage: 0,
+    networkUp: false,
+    pumpStatus: "Idle",
+    ledStatus: "Off",
+    sensorHealth: 0,
+    lastCalibration: "--/--/---- --:--",
+    firmwareVersion: "Live-RTDB",
+    ledIntensity: { LED1: 0, LED2: 0, LED3: 0, LED4: 0 },
+    operations: {
+      AirBubbles: false,
+      Drain: false,
+      Fan: false,
+      Filling: false,
+      SolarCleaning: false,
+      LED1: false,
+      LED2: false,
+      LED3: false,
+      LED4: false,
+    },
+    airBubblesTiming: { on: 15, off: 5 },
+    nutritionDosing: {
+      Motor1Volume: 0,
+      Motor2Volume: 0,
+      Motor3Volume: 0,
+      Motor4Volume: 0,
+      Motor5Volume: 0,
+    },
+  };
+}
+
 export function useLiveData(treeId: string = DEFAULT_TREE_ID): LiveData {
   const [d, setD] = useState<LiveData>({
     activeTreeId: treeId,
@@ -569,22 +661,18 @@ export function useLiveData(treeId: string = DEFAULT_TREE_ID): LiveData {
     let cancelled = false;
     let stream: EventSource | null = null;
     const normalizedBase = baseUrl.replace(/\/$/, "");
+    const treeNode = treeId.startsWith("AIAT") ? "AiAlgeeTree" : "AlgeeTree";
     let algeeTreeCache: Record<string, DbTree | number | undefined> = {};
 
     const setFromAlgeeTree = (root: Record<string, DbTree | number | undefined>) => {
       const noOfDevices = toNum((root.NoOfDevices as number | undefined), 0);
       const requestedTree = root[treeId] as DbTree | undefined;
-      const fallbackTree = root[DEFAULT_TREE_ID] as DbTree | undefined;
-      const anyTree = Object.entries(root).find(([k]) => k !== "NoOfDevices")?.[1] as DbTree | undefined;
-      const selectedTree = requestedTree ?? fallbackTree ?? anyTree;
-      const selectedTreeId = requestedTree
-        ? treeId
-        : fallbackTree
-          ? DEFAULT_TREE_ID
-          : (selectedTree?.DeviceID ?? DEFAULT_TREE_ID);
-
-      if (!selectedTree || cancelled) return;
-      setD(mapTreeToLiveData(selectedTreeId, selectedTree, noOfDevices));
+      if (cancelled) return;
+      if (!requestedTree) {
+        setD(makeOfflineLiveData(treeId));
+        return;
+      }
+      setD(mapTreeToLiveData(treeId, requestedTree, noOfDevices));
     };
 
     const applyPathUpdate = (path: string, data: unknown, mergeObject: boolean) => {
@@ -628,14 +716,20 @@ export function useLiveData(treeId: string = DEFAULT_TREE_ID): LiveData {
 
     const loadSnapshot = async () => {
       try {
-        const res = await fetch(`${normalizedBase}/AlgeeTree.json`, { cache: "no-store" });
-        if (!res.ok) return;
+        const res = await fetch(`${normalizedBase}/${treeNode}.json`, { cache: "no-store" });
+        if (!res.ok) {
+          if (!cancelled) setD(makeOfflineLiveData(treeId));
+          return;
+        }
         const json = (await res.json()) as Record<string, DbTree | number | undefined>;
-        if (!json || cancelled) return;
+        if (!json || cancelled) {
+          if (!cancelled) setD(makeOfflineLiveData(treeId));
+          return;
+        }
         algeeTreeCache = json;
         setFromAlgeeTree(algeeTreeCache);
       } catch {
-        // Keep last successful snapshot on transient fetch errors.
+        if (!cancelled) setD(makeOfflineLiveData(treeId));
       }
     };
 
@@ -678,7 +772,7 @@ export function useLiveData(treeId: string = DEFAULT_TREE_ID): LiveData {
       } catch {
         // ignore
       }
-      stream = new EventSource(`${normalizedBase}/AlgeeTree.json`);
+      stream = new EventSource(`${normalizedBase}/${treeNode}.json`);
       stream.addEventListener("put", handleStreamEvent as EventListener);
       stream.addEventListener("patch", handleStreamEvent as EventListener);
       stream.onerror = () => {

@@ -102,6 +102,7 @@ export interface LiveData {
     LED2: number;
     LED3: number;
     LED4: number;
+    AirBubble: number;
   };
   operations: {
     AirBubbles: boolean;
@@ -191,6 +192,7 @@ type DbTree = {
     LED2?: number;
     LED3?: number;
     LED4?: number;
+    AirBubble?: number;
   };
   Operations?: {
     AirBubbles?: boolean;
@@ -364,6 +366,7 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
   const led2 = toNum(tree.Intensity?.LED2, 0);
   const led3 = toNum(tree.Intensity?.LED3, 0);
   const led4 = toNum(tree.Intensity?.LED4, 0);
+  const airBubble = toNum(tree.Intensity?.AirBubble, 0);
   const avgLed = (led1 + led2 + led3 + led4) / 4;
 
   const batteryPercentage = toNum(tree.Battery?.Percentage, 0);
@@ -456,6 +459,7 @@ function mapTreeToLiveData(treeId: string, tree: DbTree, noOfDevices: number): L
       LED2: led2,
       LED3: led3,
       LED4: led4,
+      AirBubble: airBubble,
     },
     operations: {
       AirBubbles: !!tree.Operations?.AirBubbles,
@@ -551,7 +555,7 @@ function makeOfflineLiveData(treeId: string): LiveData {
     sensorHealth: 0,
     lastCalibration: "--/--/---- --:--",
     firmwareVersion: "Live-RTDB",
-    ledIntensity: { LED1: 0, LED2: 0, LED3: 0, LED4: 0 },
+    ledIntensity: { LED1: 0, LED2: 0, LED3: 0, LED4: 0, AirBubble: 0 },
     operations: {
       AirBubbles: false,
       Drain: false,
@@ -632,7 +636,7 @@ export function useLiveData(treeId: string = DEFAULT_TREE_ID): LiveData {
     diskUsage: 0, networkUp: false, pumpStatus: "Idle",
     ledStatus: "Off", sensorHealth: 0,
     lastCalibration: "--/--/---- --:--", firmwareVersion: "Live-RTDB",
-    ledIntensity: { LED1: 0, LED2: 0, LED3: 0, LED4: 0 },
+    ledIntensity: { LED1: 0, LED2: 0, LED3: 0, LED4: 0, AirBubble: 0 },
     operations: {
       AirBubbles: false,
       Drain: false,

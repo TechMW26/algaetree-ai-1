@@ -21,6 +21,7 @@ const clampPercent = (value: number) => Math.min(Math.max(value, 0), 100);
 const clampNumber = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const DASH_BASE_WIDTH = 1366;
 const DASH_BASE_HEIGHT = 900;
+const CONTROL_COOLDOWN_MS = 2000;
 
 type ControlPanelTab =
   | "flow"
@@ -646,6 +647,83 @@ function RoundKnob({
   );
 }
 
+function IntensitySlider({
+  label,
+  value,
+  min,
+  max,
+  busy,
+  accent = "#38bdf8",
+  onChange,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  busy?: boolean;
+  accent?: string;
+  onChange: (v: number) => void;
+  onCommit: () => void;
+}) {
+  const pct = clampNumber(((value - min) / Math.max(1, max - min)) * 100, 0, 100);
+
+  return (
+    <div
+      className="rounded-xl"
+      style={{
+        padding: "14px 16px",
+        border: "1px solid var(--border)",
+        background: "linear-gradient(140deg, rgba(14,165,233,0.12), rgba(56,189,248,0.04))",
+      }}
+    >
+      <div className="flex items-center justify-between" style={{ marginBottom: 12, gap: 12 }}>
+        <div>
+          <p style={{ fontSize: 11, fontWeight: 900, color: "var(--text-2)", letterSpacing: "0.04em", textTransform: "uppercase" }}>{label}</p>
+          <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginTop: 3 }}>Air bubble motor output</p>
+        </div>
+        <span
+          style={{
+            minWidth: 56,
+            textAlign: "center",
+            borderRadius: 999,
+            padding: "7px 10px",
+            background: "rgba(56,189,248,0.14)",
+            color: accent,
+            fontSize: 14,
+            fontWeight: 900,
+          }}
+        >
+          {value}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={1}
+        value={value}
+        disabled={busy}
+        onChange={(e) => onChange(clampNumber(Number(e.target.value), min, max))}
+        onMouseUp={onCommit}
+        onTouchEnd={onCommit}
+        style={{
+          width: "100%",
+          accentColor: accent,
+          cursor: busy ? "not-allowed" : "pointer",
+          opacity: busy ? 0.55 : 1,
+          background: `linear-gradient(90deg, ${accent} ${pct}%, var(--track-strong) ${pct}%)`,
+        }}
+        aria-label={label}
+      />
+      <div className="flex items-center justify-between" style={{ marginTop: 8, color: "var(--text-3)", fontSize: 10, fontWeight: 800 }}>
+        <span>{min}</span>
+        <span>{max}</span>
+      </div>
+    </div>
+  );
+}
+
 function DashboardClock() {
   const [time, setTime] = useState(() =>
     new Date().toLocaleTimeString("en-US", {
@@ -699,6 +777,7 @@ function DashboardPageContent() {
   const [uiOperations, setUiOperations] = useState(d.operations);
   const [uiAirBubblesTiming, setUiAirBubblesTiming] = useState(d.airBubblesTiming);
   const [ledDraft, setLedDraft] = useState({ LED1: 0, LED2: 0, LED3: 0, LED4: 0 });
+  const [airBubbleDraft, setAirBubbleDraft] = useState(0);
   const [nutritionDraft, setNutritionDraft] = useState({
     Motor1Volume: 0,
     Motor2Volume: 0,
@@ -713,10 +792,12 @@ function DashboardPageContent() {
   const uiOperationsRef = useRef(uiOperations);
   const uiAirBubblesTimingRef = useRef(uiAirBubblesTiming);
   const ledDraftRef = useRef(ledDraft);
+  const airBubbleDraftRef = useRef(airBubbleDraft);
   const nutritionDraftRef = useRef(nutritionDraft);
   useEffect(() => { uiOperationsRef.current = uiOperations; }, [uiOperations]);
   useEffect(() => { uiAirBubblesTimingRef.current = uiAirBubblesTiming; }, [uiAirBubblesTiming]);
   useEffect(() => { ledDraftRef.current = ledDraft; }, [ledDraft]);
+  useEffect(() => { airBubbleDraftRef.current = airBubbleDraft; }, [airBubbleDraft]);
   useEffect(() => { nutritionDraftRef.current = nutritionDraft; }, [nutritionDraft]);
   const operationChangeCodes: Record<keyof typeof uiOperations, number> = {
     AirBubbles: 15,
@@ -763,6 +844,7 @@ function DashboardPageContent() {
         ledTarget.LED2 > 0 ||
         ledTarget.LED3 > 0 ||
         ledTarget.LED4 > 0 ||
+        ledTarget.AirBubble > 0 ||
         nutritionTarget.Motor1Volume > 0 ||
         nutritionTarget.Motor2Volume > 0 ||
         nutritionTarget.Motor3Volume > 0 ||
@@ -791,6 +873,7 @@ function DashboardPageContent() {
             LED3: lerpRounded(ledTarget.LED3),
             LED4: lerpRounded(ledTarget.LED4),
           });
+          setAirBubbleDraft(lerpRounded(ledTarget.AirBubble));
           setNutritionDraft({
             Motor1Volume: lerpRounded(nutritionTarget.Motor1Volume),
             Motor2Volume: lerpRounded(nutritionTarget.Motor2Volume),
@@ -806,6 +889,7 @@ function DashboardPageContent() {
           if (tick >= totalTicks) {
             stopDialBootRamp();
             setLedDraft(ledTarget);
+            setAirBubbleDraft(ledTarget.AirBubble);
             setNutritionDraft(nutritionTarget);
             setUiAirBubblesTiming(bubbleTarget);
             hasBootstrappedDialStateRef.current = true;
@@ -813,6 +897,7 @@ function DashboardPageContent() {
         }, 28);
       } else {
         setLedDraft(ledTarget);
+        setAirBubbleDraft(ledTarget.AirBubble);
         setNutritionDraft(nutritionTarget);
         setUiAirBubblesTiming(bubbleTarget);
         hasBootstrappedDialStateRef.current = true;
@@ -822,6 +907,7 @@ function DashboardPageContent() {
     }
 
     setLedDraft(ledTarget);
+    setAirBubbleDraft(ledTarget.AirBubble);
     setNutritionDraft(nutritionTarget);
     setUiAirBubblesTiming(bubbleTarget);
   }, [
@@ -829,6 +915,7 @@ function DashboardPageContent() {
     d.ledIntensity.LED2,
     d.ledIntensity.LED3,
     d.ledIntensity.LED4,
+    d.ledIntensity.AirBubble,
     d.nutritionDosing.Motor1Volume,
     d.nutritionDosing.Motor2Volume,
     d.nutritionDosing.Motor3Volume,
@@ -934,15 +1021,15 @@ function DashboardPageContent() {
 
     if (!options?.skipCooldown) {
       const elapsed = now - lastOperationAtRef.current;
-      if (elapsed < 5000) {
-        showCooldownPopup(5000 - elapsed);
+      if (elapsed < CONTROL_COOLDOWN_MS) {
+        showCooldownPopup(CONTROL_COOLDOWN_MS - elapsed);
         return false;
       }
     }
 
     lastOperationAtRef.current = now;
     if (!options?.skipCooldown) {
-      showCooldownPopup(5000);
+      showCooldownPopup(CONTROL_COOLDOWN_MS);
     }
     await patchDevice(
       {
@@ -1007,6 +1094,17 @@ function DashboardPageContent() {
     const sent = await sendChangeCommand(12, 0, { Intensity: intensityPatch });
     const anySent = sent;
     if (!anySent) setLedDraft(d.ledIntensity);
+  };
+
+  const commitAirBubbleIntensity = async () => {
+    const value = clampNumber(Math.round(airBubbleDraftRef.current), 0, 255);
+    const sent = await sendChangeCommand(12, 0, {
+      Intensity: {
+        ...d.ledIntensity,
+        AirBubble: value,
+      },
+    });
+    if (!sent) setAirBubbleDraft(d.ledIntensity.AirBubble);
   };
 
   const waitMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -2196,14 +2294,12 @@ function DashboardPageContent() {
                 <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingRight: 2 }}>
                   {controlPanelTab === "flow" && (
                     <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(15,23,42,0.08), rgba(56,189,248,0.04))", display: "flex", flexDirection: "column", gap: 12 }}>
-                      <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                      <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                         <ToggleChip label="Refilling" enabled={uiOperations.Filling} busy={controlBusy} onToggle={() => { void toggleFluidOperation("Filling"); }} />
                         <ToggleChip label="Drain" enabled={uiOperations.Drain} busy={controlBusy} onToggle={() => { void toggleFluidOperation("Drain"); }} />
                         <ToggleChip label="Air Purification" enabled={uiOperations.Fan} busy={controlBusy} onToggle={() => { void toggleOperation("Fan"); }} />
                         <ToggleChip label="Aeration" enabled={uiOperations.AirBubbles} busy={controlBusy} onToggle={() => { void toggleOperation("AirBubbles"); }} />
-                        <div style={{ gridColumn: "1 / -1" }}>
-                          <ToggleChip label="Solar Cleaning" enabled={uiOperations.SolarCleaning} busy={controlBusy} onToggle={() => { void toggleOperation("SolarCleaning"); }} />
-                        </div>
+                        <ToggleChip label="Solar Cleaning" enabled={uiOperations.SolarCleaning} busy={controlBusy} onToggle={() => { void toggleOperation("SolarCleaning"); }} />
                       </div>
 
                       <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginTop: "auto" }}>
@@ -2233,6 +2329,18 @@ function DashboardPageContent() {
                           onChange={(v) => updateBubblesTimingDraft("off", v)}
                           onCommit={() => { void commitBubblesTiming("off"); }}
                         />
+                        <div style={{ gridColumn: "1 / -1" }}>
+                          <IntensitySlider
+                            label="Bubble Intensity"
+                            value={airBubbleDraft}
+                            min={0}
+                            max={255}
+                            accent="#0ea5e9"
+                            busy={controlBusy}
+                            onChange={setAirBubbleDraft}
+                            onCommit={() => { void commitAirBubbleIntensity(); }}
+                          />
+                        </div>
                       </div>
                     </div>
                   )}

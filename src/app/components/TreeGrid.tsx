@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -14,6 +13,7 @@ interface Tree {
   online: boolean;
   lastOnline?: string;
   isAi?: boolean;
+  imageUrl: string;
 }
 
 const ALL_CITIES = "__all__";
@@ -331,14 +331,8 @@ export default function TreeGrid() {
                 </div>
 
                 <div style={s.podFrame}>
-                  <Image
-                    src="/Algaetree.png"
-                    alt=""
-                    width={86}
-                    height={164}
-                    style={s.podImage}
-                    sizes="86px"
-                  />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={t.imageUrl || "/Algaetree.png"} alt="" style={s.podImage} />
                 </div>
               </div>
 

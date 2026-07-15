@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { Schema, model, models, type Model, type Types } from "mongoose";
 
 /**
@@ -16,6 +17,8 @@ export interface IAlgaeTree {
   lat: number;
   lng: number;
   isActive: boolean;
+  imageUrl: string;
+  publicAccessKey?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +32,13 @@ const algaeTreeSchema = new Schema<IAlgaeTree>(
     lat: { type: Number, required: true },
     lng: { type: Number, required: true },
     isActive: { type: Boolean, default: true },
+    imageUrl: { type: String, default: "", trim: true },
+    publicAccessKey: {
+      type: String,
+      required: true,
+      default: () => crypto.randomBytes(24).toString("base64url"),
+      select: false,
+    },
   },
   { timestamps: true },
 );

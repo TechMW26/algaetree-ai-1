@@ -103,11 +103,11 @@ export async function GET(req: NextRequest) {
           fetch(`${normUrl}/${node}/${encodeURIComponent(treeId)}/LastOnline.json`, { cache: "no-store" }),
         ]);
 
-        if (devRes.ok) {
+        if (devRes.ok && (!tree.name || tree.name === treeId)) {
           const devId = await devRes.json();
           if (typeof devId === "string" && devId.trim()) name = devId;
         }
-        if (locRes.ok) {
+        if (locRes.ok && !tree.location) {
           const loc = await locRes.json();
           if (typeof loc === "string" && loc.trim()) location = loc;
         }
@@ -135,6 +135,7 @@ export async function GET(req: NextRequest) {
         online,
         lastOnline,
         isAi: treeId.startsWith("AIAT"),
+        imageUrl: tree.imageUrl || "/Algaetree.png",
       };
     }),
   );

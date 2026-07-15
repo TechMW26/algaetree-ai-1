@@ -44,3 +44,4 @@ next-env.d.ts
 *.deb
 kiosk/dist/
 kiosk/node_modules/
+.env*.local

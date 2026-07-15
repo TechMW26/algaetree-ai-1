@@ -32,3 +32,11 @@ export const createTreeSchema = z.object({
   lat: z.number(),
   lng: z.number(),
 });
+
+export const updateTreeSchema = z.object({
+  name: z.string().trim().min(1, "name is required"),
+  location: z.string().trim(),
+  city: z.string().trim(),
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+});

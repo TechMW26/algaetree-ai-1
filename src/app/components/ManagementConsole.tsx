@@ -124,6 +124,7 @@ interface Tree {
   lat: number;
   lng: number;
   isAi?: boolean;
+  imageUrl: string;
 }
 
 interface ManagedUser {
@@ -179,6 +180,16 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
   const [editTrees, setEditTrees] = useState<string[]>([]);
   const [treeSearch, setTreeSearch] = useState("");
 
+  // tree metadata editor
+  const [editingTree, setEditingTree] = useState<Tree | null>(null);
+  const [editTreeName, setEditTreeName] = useState("");
+  const [editTreeLocation, setEditTreeLocation] = useState("");
+  const [editTreeCity, setEditTreeCity] = useState("");
+  const [editTreeLat, setEditTreeLat] = useState("");
+  const [editTreeLng, setEditTreeLng] = useState("");
+  const [editTreeImage, setEditTreeImage] = useState<File | null>(null);
+  const [editTreeImagePreview, setEditTreeImagePreview] = useState("");
+
   const notify = (type: "ok" | "err", text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 4000);
@@ -207,6 +218,14 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
     const refreshId = setInterval(() => void loadTrees(), 10000);
     return () => clearInterval(refreshId);
   }, [loadTrees, loadUsers]);
+
+  useEffect(() => {
+    return () => {
+      if (editTreeImagePreview.startsWith("blob:")) {
+        URL.revokeObjectURL(editTreeImagePreview);
+      }
+    };
+  }, [editTreeImagePreview]);
 
   const toggleTree = (id: string, list: string[], setList: (v: string[]) => void) => {
     setList(list.includes(id) ? list.filter((t) => t !== id) : [...list, id]);
@@ -342,6 +361,83 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
     }
   };
 
+  const openTreeEditor = (tree: Tree) => {
+    setEditingTree(tree);
+    setEditTreeName(tree.name);
+    setEditTreeLocation(tree.location);
+    setEditTreeCity(tree.city ?? "");
+    setEditTreeLat(String(tree.lat));
+    setEditTreeLng(String(tree.lng));
+    setEditTreeImage(null);
+    setEditTreeImagePreview(tree.imageUrl || "/Algaetree.png");
+  };
+
+  const saveTree = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTree) return;
+
+    const lat = Number(editTreeLat);
+    const lng = Number(editTreeLng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      notify("err", "Latitude and longitude must be valid numbers");
+      return;
+    }
+
+    const form = new FormData();
+    form.set("name", editTreeName);
+    form.set("location", editTreeLocation);
+    form.set("city", editTreeCity);
+    form.set("lat", String(lat));
+    form.set("lng", String(lng));
+    if (editTreeImage) form.set("image", editTreeImage);
+
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/algaetrees/${encodeURIComponent(editingTree.treeId)}`, {
+        method: "PATCH",
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        notify("err", data.error ?? "Failed to update AlgaeTree");
+        return;
+      }
+      notify("ok", `Updated ${editingTree.treeId}`);
+      setEditingTree(null);
+      await loadTrees();
+    } catch {
+      notify("err", "Network error. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyPublicLink = async (tree: Tree) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/algaetrees/${encodeURIComponent(tree.treeId)}/share-link`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        notify("err", data.error ?? "Failed to create dashboard link");
+        return;
+      }
+
+      const url = new URL(data.path, window.location.origin).toString();
+      try {
+        await navigator.clipboard.writeText(url);
+        notify("ok", `Dashboard link copied for ${tree.treeId}`);
+      } catch {
+        window.prompt("Copy this dashboard link", url);
+      }
+    } catch {
+      notify("err", "Network error. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const title = mode === "super" ? "Super Admin Console" : "Admin Console";
   const canCreateAdmin = mode === "super";
   const activeUsers = users.filter((u) => u.isActive).length;
@@ -421,7 +517,7 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
         )}
 
         {activeView === "create" && (
-          <section style={s.wideCard}>
+          <section style={{ ...s.wideCard, flex: 1, minHeight: 0 }}>
             <h2 style={s.h2}>Create {canCreateAdmin ? "user" : "customer"}</h2>
             <form onSubmit={createUser} style={s.formWide}>
               <input style={s.input} type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -456,7 +552,7 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
         )}
 
         {(activeView === "users" || activeView === "access") && (
-          <section style={s.wideCard}>
+          <section style={{ ...s.wideCard, flex: 1, minHeight: 0 }}>
             <h2 style={s.h2}>{activeView === "users" ? "Users" : "Tree access"}</h2>
             <div style={s.scrollListLarge}>
               {users.length === 0 && <span style={s.muted}>No users yet</span>}
@@ -499,21 +595,31 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
                 </form>
               </div>
             )}
-            <div style={s.wideCard}>
+            <div style={{ ...s.wideCard, height: "100%" }}>
               <h2 style={s.h2}>AlgaeTrees {treesAll && <span style={s.muted}>(DB)</span>}</h2>
               <input style={s.input} type="text" placeholder="Search trees…" value={treeSearch} onChange={(e) => setTreeSearch(e.target.value)} />
               <div style={s.scrollListLarge}>
                 {registryFiltered.length === 0 && <span style={s.muted}>No trees match</span>}
                 {registryFiltered.map((t) => (
                   <div key={t.treeId} style={s.userRow}>
-                    <div>
+                    <div style={s.treeRegistryRow}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={t.imageUrl || "/Algaetree.png"} alt="" style={s.treeThumb} />
+                      <div>
                       <div style={s.userEmail}>{t.name}{t.isAi && <span style={s.aiBadge}>AI</span>}</div>
                       <div style={s.userMeta}>
                         <span style={s.badge}>{t.treeId}</span>
                         <span style={s.muted}>{t.location || t.city || "No location label"}</span>
                         <span style={s.muted}>{t.lat}, {t.lng}</span>
                       </div>
+                      </div>
                     </div>
+                    {mode === "super" && (
+                      <div style={s.userActions}>
+                        <button type="button" style={s.smallBtn} disabled={busy} onClick={() => openTreeEditor(t)}>Edit</button>
+                        <button type="button" style={s.smallBtn} disabled={busy} onClick={() => void copyPublicLink(t)}>Copy link</button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -556,91 +662,130 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
           </div>
         </div>
       )}
+
+      {editingTree && (
+        <div style={s.modalBg} onClick={() => setEditingTree(null)}>
+          <form style={{ ...s.modal, maxWidth: 560 }} onSubmit={saveTree} onClick={(e) => e.stopPropagation()}>
+            <h2 style={s.h2}>Edit AlgaeTree — {editingTree.treeId}</h2>
+            <div style={s.treeImageEditor}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={editTreeImagePreview || "/Algaetree.png"} alt="AlgaeTree preview" style={s.treeImagePreview} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <span style={s.fieldLabel}>Tree image</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    setEditTreeImage(file);
+                    if (file) setEditTreeImagePreview(URL.createObjectURL(file));
+                  }}
+                  style={s.fileInput}
+                />
+                <span style={s.muted}>PNG, JPEG, or WebP. Maximum 4 MB.</span>
+              </div>
+            </div>
+            <input style={s.input} placeholder="Name" required value={editTreeName} onChange={(e) => setEditTreeName(e.target.value)} />
+            <input style={s.input} placeholder="Location" value={editTreeLocation} onChange={(e) => setEditTreeLocation(e.target.value)} />
+            <input style={s.input} placeholder="City" value={editTreeCity} onChange={(e) => setEditTreeCity(e.target.value)} />
+            <div style={s.twoCols}>
+              <input style={s.input} placeholder="Latitude" required value={editTreeLat} onChange={(e) => setEditTreeLat(e.target.value)} />
+              <input style={s.input} placeholder="Longitude" required value={editTreeLng} onChange={(e) => setEditTreeLng(e.target.value)} />
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button type="submit" style={s.primary} disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
+              <button type="button" style={s.smallBtn} onClick={() => setEditingTree(null)}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
 
 const s: Record<string, React.CSSProperties> = {
   page: {
-    minHeight: "100vh",
+    height: "100dvh",
     background: "radial-gradient(1200px 600px at 15% -10%, rgba(34,197,94,0.10), transparent 55%), radial-gradient(1000px 500px at 100% 0%, rgba(56,189,248,0.07), transparent 50%), var(--bg)",
     color: "var(--text-1)",
-    padding: 24,
     display: "grid",
-    gridTemplateColumns: "280px minmax(0, 1fr)",
-    gap: 20,
+    gridTemplateColumns: "260px minmax(0, 1fr)",
+    overflow: "hidden",
   },
   sidebar: {
-    minHeight: "calc(100vh - 48px)",
+    height: "100dvh",
     background: "var(--surface)",
-    border: "1px solid var(--border)",
-    borderRadius: 22,
-    padding: 20,
+    borderRight: "1px solid var(--border)",
+    padding: "20px 18px",
     display: "flex",
     flexDirection: "column",
-    gap: 22,
-    position: "sticky",
-    top: 24,
+    gap: 18,
+    overflow: "hidden",
   },
   nav: { display: "flex", flexDirection: "column", gap: 8 },
   navItem: {
     width: "100%",
     border: "1px solid transparent",
-    borderRadius: 14,
+    borderRadius: 10,
     background: "transparent",
     color: "var(--text-2)",
-    padding: "12px 14px",
+    padding: "10px 12px",
     textAlign: "left",
-    fontSize: 14,
-    fontWeight: 800,
+    fontSize: 13,
+    fontWeight: 700,
     cursor: "pointer",
+    transition: "background .15s, color .15s",
   },
   navItemActive: {
     background: "rgba(34,197,94,0.13)",
     borderColor: "rgba(34,197,94,0.24)",
     color: "#16a34a",
   },
-  sidebarActions: { marginTop: "auto", display: "grid", gap: 10 },
-  main: { minWidth: 0, display: "flex", flexDirection: "column", gap: 16 },
-  pageTitle: { margin: 0, fontSize: 22, fontWeight: 900, color: "var(--text-1)" },
-  dashboardGrid: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 14 },
+  sidebarActions: { marginTop: "auto", display: "grid", gap: 8, paddingTop: 12, borderTop: "1px solid var(--border)" },
+  main: { minWidth: 0, display: "flex", flexDirection: "column", gap: 0, overflow: "hidden", padding: "20px 24px 20px 24px" },
+  pageTitle: { margin: 0, fontSize: 20, fontWeight: 800, color: "var(--text-1)", letterSpacing: -0.2 },
+  dashboardGrid: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 14, flexShrink: 0 },
   metricCard: {
     background: "var(--surface)",
     border: "1px solid var(--border)",
-    borderRadius: 18,
-    padding: 18,
-    minHeight: 110,
+    borderRadius: 14,
+    padding: "16px 18px",
+    minHeight: 96,
     display: "flex",
     flexDirection: "column",
     justifyContent: "space-between",
   },
-  metricValue: { fontSize: 34, fontWeight: 900, color: "var(--text-1)" },
+  metricValue: { fontSize: 30, fontWeight: 800, color: "var(--text-1)" },
   wideCard: {
     background: "var(--surface)",
     border: "1px solid var(--border)",
-    borderRadius: 18,
-    padding: 20,
-    boxShadow: "0 16px 40px -28px rgba(0,0,0,0.45)",
+    borderRadius: 16,
+    padding: "18px 20px",
     display: "flex",
     flexDirection: "column",
-    gap: 12,
+    gap: 10,
+    overflow: "hidden",
+    minHeight: 0,
   },
   registryLayout: {
     display: "grid",
-    gridTemplateColumns: "minmax(300px, 420px) minmax(0, 1fr)",
+    gridTemplateColumns: "minmax(280px, 380px) minmax(0, 1fr)",
     gap: 16,
     alignItems: "start",
+    flex: 1,
+    minHeight: 0,
+    overflow: "hidden",
   },
-  formWide: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 },
+  formWide: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, alignContent: "start" },
   twoCols: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-  scrollListLarge: { display: "flex", flexDirection: "column", gap: 8, maxHeight: "calc(100vh - 250px)", overflowY: "auto", paddingRight: 4 },
+  scrollListLarge: { display: "flex", flexDirection: "column", gap: 6, flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 },
   treeListLarge: { display: "flex", flexDirection: "column", gap: 4, maxHeight: 360, overflowY: "auto", padding: 10, background: "var(--surface-hover)", borderRadius: 12, border: "1px solid var(--border)" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12, flexShrink: 0 },
   headerActions: { display: "flex", alignItems: "center", gap: 10 },
-  h1: { margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: "var(--text-1)" },
-  sub: { margin: "4px 0 0", color: "var(--text-2)", fontSize: 13 },
-  backLink: { textDecoration: "none", color: "var(--text-1)", background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", fontSize: 13, fontWeight: 600 },
-  logout: { background: "var(--surface-hover)", color: "var(--text-1)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontWeight: 600 },
+  h1: { margin: 0, fontSize: 18, fontWeight: 800, letterSpacing: -0.3, color: "var(--text-1)", lineHeight: 1.2 },
+  sub: { margin: "2px 0 0", color: "var(--text-2)", fontSize: 12, overflowWrap: "break-word", wordBreak: "break-word" },
+  backLink: { textDecoration: "none", color: "var(--text-1)", background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 600, textAlign: "center" as const },
+  logout: { background: "var(--surface-hover)", color: "var(--text-1)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontWeight: 600, fontSize: 12 },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18, alignItems: "start" },
   card: {
     background: "var(--surface)",
@@ -654,16 +799,16 @@ const s: Record<string, React.CSSProperties> = {
     maxHeight: "calc(100vh - 160px)",
     overflow: "hidden",
   },
-  h2: { margin: "0 0 14px", fontSize: 16, fontWeight: 700, color: "var(--text-1)" },
+  h2: { margin: "0 0 8px", fontSize: 15, fontWeight: 700, color: "var(--text-1)", flexShrink: 0 },
   form: { display: "flex", flexDirection: "column", gap: 12 },
   fieldLabel: { display: "block", fontSize: 12, color: "var(--text-2)", fontWeight: 600, marginBottom: 6 },
   input: {
     background: "var(--surface-hover)",
     border: "1px solid var(--border)",
-    borderRadius: 12,
-    padding: "11px 13px",
+    borderRadius: 10,
+    padding: "10px 12px",
     color: "var(--text-1)",
-    fontSize: 14,
+    fontSize: 13,
     outline: "none",
     width: "100%",
     boxSizing: "border-box",
@@ -744,27 +889,32 @@ const s: Record<string, React.CSSProperties> = {
   aiBadge: {
     display: "inline-flex",
     alignItems: "center",
-    marginLeft: 6,
-    fontSize: 10,
+    marginLeft: 5,
+    fontSize: 9,
     fontWeight: 800,
     letterSpacing: 0.5,
     background: "linear-gradient(135deg,#818cf8,#6366f1)",
     color: "#fff",
-    borderRadius: 5,
-    padding: "2px 7px",
+    borderRadius: 4,
+    padding: "1px 6px",
     verticalAlign: "middle",
     lineHeight: 1.3,
   },
-  primary: { background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#04140a", fontWeight: 700, border: "none", borderRadius: 12, padding: "11px 14px", cursor: "pointer", fontSize: 14, marginTop: 2 },
+  primary: { background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#04140a", fontWeight: 700, border: "none", borderRadius: 10, padding: "10px 14px", cursor: "pointer", fontSize: 13, flexShrink: 0 },
   userList: { display: "flex", flexDirection: "column", gap: 8 },
   scrollList: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 420, overflowY: "auto", paddingRight: 4 },
-  userRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 13px", background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: 12 },
+  userRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--surface-hover)", border: "1px solid var(--border)", borderRadius: 10, gap: 12 },
+  treeRegistryRow: { display: "flex", alignItems: "center", gap: 12, minWidth: 0 },
+  treeThumb: { width: 40, height: 48, objectFit: "contain", borderRadius: 8, background: "var(--surface)", border: "1px solid var(--border)", flexShrink: 0 },
+  treeImageEditor: { display: "grid", gridTemplateColumns: "130px minmax(0, 1fr)", gap: 18, alignItems: "center", padding: 14, border: "1px solid var(--border)", borderRadius: 14, background: "var(--surface-hover)" },
+  treeImagePreview: { width: 130, height: 150, objectFit: "contain", borderRadius: 12, background: "var(--surface)", border: "1px solid var(--border)" },
+  fileInput: { width: "100%", color: "var(--text-2)", fontSize: 12 },
   userEmail: { fontSize: 14, fontWeight: 600, color: "var(--text-1)" },
   userMeta: { display: "flex", gap: 8, alignItems: "center", marginTop: 4, fontSize: 12 },
-  badge: { background: "rgba(34,197,94,0.16)", color: "#15803d", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700, letterSpacing: 0.3 },
+  badge: { background: "rgba(34,197,94,0.16)", color: "#15803d", borderRadius: 5, padding: "2px 7px", fontSize: 10, fontWeight: 700, letterSpacing: 0.3, whiteSpace: "nowrap" as const },
   userActions: { display: "flex", gap: 6 },
-  smallBtn: { background: "var(--surface-hover)", color: "var(--text-1)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 600 },
-  toast: { padding: "11px 15px", borderRadius: 12, marginBottom: 16, fontSize: 13, fontWeight: 600 },
+  smallBtn: { background: "var(--surface-hover)", color: "var(--text-1)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" as const },
+  toast: { padding: "10px 14px", borderRadius: 10, marginBottom: 12, fontSize: 13, fontWeight: 600, flexShrink: 0 },
   toastOk: { background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", color: "#15803d" },
   toastErr: { background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#dc2626" },
   modalBg: { position: "fixed", inset: 0, background: "rgba(2,6,23,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 100 },

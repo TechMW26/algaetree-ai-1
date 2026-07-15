@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAuth } from "@/lib/auth/currentUser";
+import { verifyTreeGuestToken } from "@/lib/auth/treeGuest";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { getAccessibleTreeIds } from "@/lib/services/access";
+import { TREE_GUEST_COOKIE } from "@/lib/constants";
 
 type ControlPayload = {
   treeId: string;
@@ -15,12 +20,38 @@ const ALLOWED_KEYS = [
 /** Change codes that indicate the pod is busy processing a previous command. */
 const BUSY_CHANGE_CODES = new Set([3, 4, 5]);
 
+async function authorizeTreeControl(req: NextRequest, treeId: string): Promise<NextResponse | null> {
+  const guestToken = req.cookies.get(TREE_GUEST_COOKIE)?.value;
+  const guest = guestToken ? verifyTreeGuestToken(guestToken) : null;
+  if (guest?.treeId === treeId) return null;
+
+  const auth = getAuth(req);
+  if (!auth) {
+    return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
+  }
+
+  try {
+    await connectToDatabase();
+    const access = await getAccessibleTreeIds(auth.sub, auth.role);
+    if (!access.all && !access.treeIds.includes(treeId)) {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+  } catch {
+    return NextResponse.json({ ok: false, error: "Service unavailable" }, { status: 503 });
+  }
+
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as ControlPayload;
     if (!body?.treeId || !body?.updates || typeof body.updates !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid payload" }, { status: 400 });
     }
+
+    const authorizationError = await authorizeTreeControl(req, body.treeId);
+    if (authorizationError) return authorizationError;
 
     const keys = Object.keys(body.updates);
     const hasInvalid = keys.some((k) => !ALLOWED_KEYS.includes(k));
@@ -34,7 +65,8 @@ export async function POST(req: NextRequest) {
     }
 
     const normUrl = baseUrl.replace(/\/$/, "");
-    const treePath = `AlgeeTree/${encodeURIComponent(body.treeId)}`;
+    const treeNode = body.treeId.startsWith("AIAT") ? "AiAlgeeTree" : "AlgeeTree";
+    const treePath = `${treeNode}/${encodeURIComponent(body.treeId)}`;
 
     // ── 1. Read current pod state first (never write without knowing the state) ──
     let currentState: { Change?: number } = {};

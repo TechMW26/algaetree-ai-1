@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { verifyAccessTokenEdge } from "@/lib/auth/edgeJwt";
+import { verifyAccessTokenEdge, verifyTreeGuestTokenEdge } from "@/lib/auth/edgeJwt";
 import {
   ACCESS_COOKIE,
   REFRESH_COOKIE,
   ROLE_HOME,
   ROLES,
+  TREE_GUEST_COOKIE,
 } from "@/lib/constants";
 
 // Pages that require an authenticated session.
@@ -24,6 +25,29 @@ export async function middleware(req: NextRequest) {
 
   const accessToken = req.cookies.get(ACCESS_COOKIE)?.value;
   const refreshToken = req.cookies.get(REFRESH_COOKIE)?.value;
+  const treeGuestToken = req.cookies.get(TREE_GUEST_COOKIE)?.value;
+
+  // A PIN-verified public tree session may open only its matching dashboard
+  // and conversational view, without requiring an email/OTP account.
+  const sharedTreeId = req.nextUrl.searchParams.get("tree");
+  const sharedAccessKey = req.nextUrl.searchParams.get("share");
+  if (
+    sharedTreeId &&
+    sharedAccessKey &&
+    (pathname.startsWith("/dashboard") || pathname.startsWith("/talk"))
+  ) {
+    if (treeGuestToken) {
+      const guest = await verifyTreeGuestTokenEdge(treeGuestToken);
+      if (guest?.treeId === sharedTreeId && guest.accessKey === sharedAccessKey) {
+        return NextResponse.next();
+      }
+    }
+    const pinUrl = new URL(
+      `/tree/${encodeURIComponent(sharedTreeId)}/${encodeURIComponent(sharedAccessKey)}`,
+      req.url,
+    );
+    return NextResponse.redirect(pinUrl);
+  }
 
   // No session at all → go sign in.
   if (!accessToken && !refreshToken) {

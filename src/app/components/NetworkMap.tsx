@@ -15,6 +15,7 @@ type MapTree = {
   online: boolean;
   lastOnline?: string;
   isAi?: boolean;
+  imageUrl: string;
 };
 
 const COUNTRY_GEOJSON_URLS = {
@@ -68,6 +69,19 @@ function buildPopupHtml(pod: PodPopupData): string {
       <button class="pod-action" data-tree="${escapeHtml(pod.treeId)}" type="button">View Dashboard →</button>
     </div>
   `;
+}
+
+function buildTreeMarkerIcon(imageUrl: string): L.DivIcon {
+  return L.divIcon({
+    className: "custom-marker-container",
+    html: `
+      <div class="marker-pulse"></div>
+      <img src="${escapeHtml(imageUrl || "/Algaetree.png")}" class="custom-marker-icon" style="width:40px;height:40px;object-fit:contain;" alt="" />
+    `,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -20],
+  });
 }
 
 function reconcileTrees(current: MapTree[], incoming: MapTree[]): MapTree[] {
@@ -128,7 +142,6 @@ export default function NetworkMap() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
-  const markerIconRef = useRef<L.DivIcon | null>(null);
   const flyToTreeRef = useRef<
     ((t: { treeId: string; lat: number; lng: number }) => void) | null
   >(null);
@@ -154,6 +167,7 @@ export default function NetworkMap() {
           online: boolean;
           lastOnline?: string;
           isAi?: boolean;
+          imageUrl: string;
         }[];
         // Only show trees with valid coordinates on the map dropdown.
         const mapped = allTrees.filter((t) => Number.isFinite(t.lat) && Number.isFinite(t.lng) && (t.lat || t.lng));
@@ -366,18 +380,6 @@ export default function NetworkMap() {
     });
     map.addControl(new RecenterControl());
 
-    const algaeIcon = L.divIcon({
-      className: "custom-marker-container",
-      html: `
-        <div class="marker-pulse"></div>
-        <img src="/Ai Main_00.png" class="custom-marker-icon" style="width:40px;height:40px;object-fit:contain;" alt="" />
-      `,
-      iconSize: [40, 40],
-      iconAnchor: [20, 20],
-      popupAnchor: [0, -20],
-    });
-    markerIconRef.current = algaeIcon;
-
     let zoomSequenceId = 0;
 
     const runSequentialZoom = (lat: number, lng: number, onDone: () => void) => {
@@ -460,7 +462,6 @@ export default function NetworkMap() {
       map.off("zoomend", updateLayerByZoom);
       containerRef.current?.removeEventListener("click", handleContainerClick);
       markersRef.current = {};
-      markerIconRef.current = null;
       flyToTreeRef.current = null;
       mapRef.current = null;
       map.remove();
@@ -470,8 +471,7 @@ export default function NetworkMap() {
   // Draw markers dynamically from DB-backed tree metadata.
   useEffect(() => {
     const map = mapRef.current;
-    const icon = markerIconRef.current;
-    if (!map || !icon || !treesLoaded) return;
+    if (!map || !treesLoaded) return;
 
     const currentIds = new Set(assignedTrees.map((t) => t.treeId));
     Object.entries(markersRef.current).forEach(([treeId, marker]) => {
@@ -485,6 +485,7 @@ export default function NetworkMap() {
     assignedTrees.forEach((tree) => {
       bounds.extend([tree.lat, tree.lng]);
       const popup = buildPopupHtml(buildPodPopupData(tree));
+      const icon = buildTreeMarkerIcon(tree.imageUrl);
       let marker = markersRef.current[tree.treeId];
       if (!marker) {
         marker = L.marker([tree.lat, tree.lng], { icon }).addTo(map);
@@ -509,6 +510,7 @@ export default function NetworkMap() {
         markersRef.current[tree.treeId] = marker;
       } else {
         marker.setLatLng([tree.lat, tree.lng]);
+        marker.setIcon(icon);
         marker.setPopupContent(popup);
         if (!map.hasLayer(marker)) marker.addTo(map);
       }

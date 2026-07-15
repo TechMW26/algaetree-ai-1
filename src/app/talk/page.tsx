@@ -9,6 +9,7 @@ import { useConversation } from "@elevenlabs/react";
 import { useLiveData } from "../hooks/useLiveData";
 import { useVisionDetection, buildGestureContext } from "../hooks/useVisionDetection";
 import type { GestureInfo } from "../hooks/useVisionDetection";
+import PublicTreeAccess from "../components/PublicTreeAccess";
 
 const Avatar3D = dynamic(() => import("../components/Avatar3D"), { ssr: false });
 
@@ -130,6 +131,10 @@ function TalkPageContent() {
   const [conversationStarted, setConversationStarted] = useState(false);
   const [agentState, setAgentState] = useState<"off" | "starting" | "on">("off");
   const selectedTreeId = searchParams.get("tree") ?? "AT00A0001";
+  const shareKey = searchParams.get("share");
+  const dashboardPath = shareKey
+    ? `/dashboard?tree=${encodeURIComponent(selectedTreeId)}&share=${encodeURIComponent(shareKey)}`
+    : `/dashboard?tree=${encodeURIComponent(selectedTreeId)}`;
   const d = useLiveData(selectedTreeId);
   const liveDataRef = useRef(d);
   liveDataRef.current = d;
@@ -346,7 +351,7 @@ function TalkPageContent() {
             onClick={async () => {
               vision.cleanup();
               if (conversationStarted) await conversation.endSession().catch(() => {});
-              router.push("/dashboard");
+              router.push(dashboardPath);
             }}
             className="flex items-center justify-center rounded-xl transition-colors cursor-pointer"
             style={{
@@ -570,7 +575,23 @@ function TalkPageContent() {
 export default function TalkPage() {
   return (
     <Suspense fallback={null}>
-      <TalkPageContent />
+      <TalkAccessRouter />
     </Suspense>
   );
+}
+
+function TalkAccessRouter() {
+  const searchParams = useSearchParams();
+  const treeId = searchParams.get("tree");
+  const accessKey = searchParams.get("share");
+
+  if (treeId && accessKey) {
+    return (
+      <PublicTreeAccess treeId={treeId} accessKey={accessKey}>
+        <TalkPageContent />
+      </PublicTreeAccess>
+    );
+  }
+
+  return <TalkPageContent />;
 }

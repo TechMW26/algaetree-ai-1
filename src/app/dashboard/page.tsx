@@ -6,6 +6,7 @@ import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLiveData } from "../hooks/useLiveData";
 import { AuthGuard } from "../components/AuthGuard";
+import PublicTreeAccess from "../components/PublicTreeAccess";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -757,7 +758,14 @@ function DashboardClock() {
 function DashboardPageContent() {
   const searchParams = useSearchParams();
   const selectedPod = searchParams.get("pod");
+  const shareKey = searchParams.get("share");
   const selectedTreeId = searchParams.get("tree") || (selectedPod === "2" ? "AT00A0002" : "AT00A0001");
+  const treeImageUrl = `/api/algaetrees/${encodeURIComponent(selectedTreeId)}/image`;
+  const sharedQuery = shareKey ? `&share=${encodeURIComponent(shareKey)}` : "";
+  const talkPath = `/talk?tree=${encodeURIComponent(selectedTreeId)}${sharedQuery}`;
+  const dashboardHomePath = shareKey
+    ? `/dashboard?tree=${encodeURIComponent(selectedTreeId)}${sharedQuery}`
+    : "/";
   const d = useLiveData(selectedTreeId);
   const router = useRouter();
   const [navigating, setNavigating] = useState(false);
@@ -1364,13 +1372,13 @@ function DashboardPageContent() {
       <div style={dashboardHeaderFadeStyle} />
       <motion.nav
         className="card relative z-10 flex items-center justify-between dash-navbar"
-        style={{ margin: "20px 24px 0", padding: "14px 28px", borderRadius: 20 }}
+        style={{ margin: "20px 24px 0", padding: "14px 28px", borderRadius: 20, minHeight: 64 }}
         initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
       >
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push(dashboardHomePath)}
           className="flex items-center cursor-pointer"
           style={{ gap: 12, background: "transparent", border: "none", padding: 0, color: "inherit" }}
           aria-label="Back to network map"
@@ -1466,7 +1474,7 @@ function DashboardPageContent() {
 
         <div style={{ flex: 1 }} />
         <motion.button
-          onClick={() => { setNavigating(true); setMenuOpen(false); router.push("/talk"); }}
+          onClick={() => { setNavigating(true); setMenuOpen(false); router.push(talkPath); }}
           disabled={navigating}
           className="glow-btn flex items-center justify-center cursor-pointer"
           style={{
@@ -1530,7 +1538,7 @@ function DashboardPageContent() {
                   <div className="flex items-center" style={{ gap: 8 }}>
                     <Badge label="Optimal" />
                     <motion.button
-                      onClick={() => { setNavigating(true); router.push(`/talk?tree=${d.activeTreeId}`); }}
+                      onClick={() => { setNavigating(true); router.push(talkPath); }}
                       disabled={navigating}
                       className="cursor-pointer"
                       style={{
@@ -1582,9 +1590,10 @@ function DashboardPageContent() {
                     }}
                   >
                     <Image
-                      src="/Algaetree.png"
+                      src={treeImageUrl}
                       alt="AlgaeTree"
                       fill
+                      unoptimized
                       className="object-contain"
                       style={{
                         filter: "drop-shadow(0 24px 48px rgba(34,197,94,0.2))",
@@ -1663,7 +1672,7 @@ function DashboardPageContent() {
               </motion.div>
 
               {/* Mobile CTA */}
-              <motion.button className="glow-btn dash-mobile-cta cursor-pointer" style={{ display: "none", alignItems: "center", justifyContent: "center", gap: 10, padding: "20px 16px", borderRadius: 20, background: navigating ? "linear-gradient(135deg, #15803d, #16a34a)" : "linear-gradient(135deg, #16a34a, #22c55e)", color: "#fff", fontWeight: 700, fontSize: 15, border: "1px solid rgba(34,197,94,0.3)", boxShadow: "0 8px 30px rgba(34,197,94,0.3)", opacity: navigating ? 0.85 : 1 }} variants={rise} onClick={() => { setNavigating(true); router.push(`/talk?tree=${d.activeTreeId}`); }} disabled={navigating} whileTap={navigating ? {} : { scale: 0.97 }}>
+              <motion.button className="glow-btn dash-mobile-cta cursor-pointer" style={{ display: "none", alignItems: "center", justifyContent: "center", gap: 10, padding: "20px 16px", borderRadius: 20, background: navigating ? "linear-gradient(135deg, #15803d, #16a34a)" : "linear-gradient(135deg, #16a34a,#22c55e)", color: "#fff", fontWeight: 700, fontSize: 15, border: "1px solid rgba(34,197,94,0.3)", boxShadow: "0 8px 30px rgba(34,197,94,0.3)", opacity: navigating ? 0.85 : 1 }} variants={rise} onClick={() => { setNavigating(true); router.push(talkPath); }} disabled={navigating} whileTap={navigating ? {} : { scale: 0.97 }}>
                 {navigating ? (<><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" strokeWidth="3" /><path d="M12 2a10 10 0 0 1 10 10" stroke="#fff" strokeWidth="3" strokeLinecap="round" /></svg><span>Loading...</span></>) : (<><svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" /><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" /></svg><span>Talk to the Tree</span></>)}
               </motion.button>
             </>
@@ -2712,7 +2721,7 @@ function DashboardPageContent() {
               </button>
               <button
                 type="button"
-                onClick={() => router.push("/")}
+                onClick={() => router.push(dashboardHomePath)}
                 style={offlineSecondaryButtonStyle}
               >
                 Go to dashboard
@@ -2836,11 +2845,27 @@ const offlineSecondaryButtonStyle: React.CSSProperties = {
 export default function DashboardPage() {
   return (
     <Suspense fallback={<div style={{ width: "100%", height: "100vh", background: "var(--bg)" }} />}>
-      <AuthGuard>
-        <Suspense fallback={null}>
-          <DashboardPageContent />
-        </Suspense>
-      </AuthGuard>
+      <DashboardAccessRouter />
     </Suspense>
+  );
+}
+
+function DashboardAccessRouter() {
+  const searchParams = useSearchParams();
+  const treeId = searchParams.get("tree");
+  const accessKey = searchParams.get("share");
+
+  if (treeId && accessKey) {
+    return (
+      <PublicTreeAccess treeId={treeId} accessKey={accessKey}>
+        <DashboardPageContent />
+      </PublicTreeAccess>
+    );
+  }
+
+  return (
+    <AuthGuard>
+      <DashboardPageContent />
+    </AuthGuard>
   );
 }

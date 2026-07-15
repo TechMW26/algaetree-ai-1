@@ -49,3 +49,5 @@ export const LOGIN_LOCK_MS = 15 * 60 * 1000; // 15 minutes
 // Cookie names
 export const ACCESS_COOKIE = "at_access";
 export const REFRESH_COOKIE = "at_refresh";
+export const TREE_GUEST_COOKIE = "at_tree_guest";
+export const TREE_GUEST_TTL_SECONDS = 12 * 60 * 60;

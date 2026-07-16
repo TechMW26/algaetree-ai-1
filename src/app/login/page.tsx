@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type Step = "email" | "otp";
@@ -129,9 +130,7 @@ function LoginInner() {
 
       <div style={styles.card}>
         <div style={styles.brand}>
-          <span style={styles.logo}>
-            <img src="/Algaetree.png" alt="AlgaeTree" style={{ width: 20, height: 20, borderRadius: 5, display: "block" }} />
-          </span>
+          <Image src="/favicon.png" alt="AlgaeTree" width={36} height={36} style={{ borderRadius: 8 }} />
           <span style={styles.brandText}>AlgaeTree</span>
         </div>
 
@@ -277,16 +276,6 @@ const styles: Record<string, React.CSSProperties> = {
     backdropFilter: "blur(18px)",
   },
   brand: { display: "flex", alignItems: "center", gap: 10, marginBottom: 26 },
-  logo: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    background: "rgba(34,197,94,0.12)",
-    border: "1px solid rgba(34,197,94,0.3)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   brandText: {
     color: "var(--text-1)",
     fontWeight: 700,

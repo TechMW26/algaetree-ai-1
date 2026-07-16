@@ -22,16 +22,38 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     return fail("Service unavailable", 503);
   }
 
-  const tree = await AlgaeTree.findOne({ treeId, isActive: true }).select("+publicAccessKey");
+  const tree = await AlgaeTree.collection.findOne(
+    { treeId, isActive: true },
+    { projection: { _id: 1, publicAccessKey: 1 } },
+  );
   if (!tree) return fail("AlgaeTree not found", 404);
 
-  if (!tree.publicAccessKey) {
-    tree.publicAccessKey = crypto.randomBytes(24).toString("base64url");
-    await tree.save();
-    await recordAudit(guard.auth.sub, "ALGAETREE_PUBLIC_LINK_CREATED", { treeId });
+  let publicAccessKey = tree.publicAccessKey;
+  if (!publicAccessKey) {
+    const candidate = crypto.randomBytes(24).toString("base64url");
+    const result = await AlgaeTree.collection.updateOne(
+      {
+        _id: tree._id,
+        $or: [
+          { publicAccessKey: { $exists: false } },
+          { publicAccessKey: null },
+          { publicAccessKey: "" },
+        ],
+      },
+      { $set: { publicAccessKey: candidate } },
+    );
+    const updated = await AlgaeTree.collection.findOne(
+      { _id: tree._id },
+      { projection: { publicAccessKey: 1 } },
+    );
+    publicAccessKey = updated?.publicAccessKey;
+    if (!publicAccessKey) return fail("Could not create dashboard link", 500);
+    if (result.modifiedCount === 1) {
+      await recordAudit(guard.auth.sub, "ALGAETREE_PUBLIC_LINK_CREATED", { treeId });
+    }
   }
 
   return ok({
-    path: `/tree/${encodeURIComponent(treeId)}/${encodeURIComponent(tree.publicAccessKey)}`,
+    path: `/tree/${encodeURIComponent(treeId)}/${encodeURIComponent(publicAccessKey)}`,
   });
 }

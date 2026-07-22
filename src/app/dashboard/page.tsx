@@ -2719,6 +2719,7 @@ function DashboardPageContent() {
               >
                 Check connection
               </button>
+              {!shareKey && (
               <button
                 type="button"
                 onClick={() => router.push(dashboardHomePath)}
@@ -2726,6 +2727,7 @@ function DashboardPageContent() {
               >
                 Go to dashboard
               </button>
+              )}
             </div>
           </div>
         </motion.div>

@@ -19,6 +19,7 @@ export interface IAlgaeTree {
   isActive: boolean;
   imageUrl: string;
   publicAccessKey?: string;
+  publicPin?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,6 +38,11 @@ const algaeTreeSchema = new Schema<IAlgaeTree>(
       type: String,
       required: true,
       default: () => crypto.randomBytes(24).toString("base64url"),
+      select: false,
+    },
+    publicPin: {
+      type: String,
+      default: null,
       select: false,
     },
   },

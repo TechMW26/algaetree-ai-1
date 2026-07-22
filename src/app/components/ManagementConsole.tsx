@@ -190,6 +190,10 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
   const [editTreeImage, setEditTreeImage] = useState<File | null>(null);
   const [editTreeImagePreview, setEditTreeImagePreview] = useState("");
 
+  // pin setter modal
+  const [settingPinTree, setSettingPinTree] = useState<Tree | null>(null);
+  const [newPin, setNewPin] = useState("");
+
   const notify = (type: "ok" | "err", text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 4000);
@@ -438,6 +442,53 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
     }
   };
 
+  const savePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!settingPinTree) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/algaetrees/${encodeURIComponent(settingPinTree.treeId)}/pin`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: newPin }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        notify("err", data.error ?? "Failed to set PIN");
+        return;
+      }
+      notify("ok", `PIN set for ${settingPinTree.treeId}`);
+      setSettingPinTree(null);
+      setNewPin("");
+    } catch {
+      notify("err", "Network error. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removePin = async () => {
+    if (!settingPinTree) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/algaetrees/${encodeURIComponent(settingPinTree.treeId)}/pin`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        notify("err", data.error ?? "Failed to remove PIN");
+        return;
+      }
+      notify("ok", `PIN removed for ${settingPinTree.treeId}`);
+      setSettingPinTree(null);
+      setNewPin("");
+    } catch {
+      notify("err", "Network error. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const title = mode === "super" ? "Super Admin Console" : "Admin Console";
   const canCreateAdmin = mode === "super";
   const activeUsers = users.filter((u) => u.isActive).length;
@@ -617,6 +668,7 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
                     {mode === "super" && (
                       <div style={s.userActions}>
                         <button type="button" style={s.smallBtn} disabled={busy} onClick={() => openTreeEditor(t)}>Edit</button>
+                        <button type="button" style={s.smallBtn} disabled={busy} onClick={() => { setSettingPinTree(t); setNewPin(""); }}>Set PIN</button>
                         <button type="button" style={s.smallBtn} disabled={busy} onClick={() => void copyPublicLink(t)}>Copy link</button>
                       </div>
                     )}
@@ -695,6 +747,39 @@ export default function ManagementConsole({ mode }: { mode: "super" | "admin" })
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               <button type="submit" style={s.primary} disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
               <button type="button" style={s.smallBtn} onClick={() => setEditingTree(null)}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* PIN setter modal */}
+      {settingPinTree && (
+        <div style={s.modalBg} onClick={() => setSettingPinTree(null)}>
+          <form style={s.modal} onSubmit={savePin} onClick={(e) => e.stopPropagation()}>
+            <h2 style={s.h2}>Set Dashboard PIN — {settingPinTree.treeId}</h2>
+            <p style={s.sub}>This PIN will be required to access the shared dashboard link.</p>
+            <input
+              style={s.input}
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={12}
+              placeholder="Enter 4–12 digit PIN"
+              value={newPin}
+              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ""))}
+              autoFocus
+              required
+            />
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button type="submit" style={s.primary} disabled={busy || newPin.length < 4}>
+                {busy ? "Saving…" : "Save PIN"}
+              </button>
+              <button type="button" style={s.smallBtn} disabled={busy} onClick={() => void removePin()}>
+                Remove PIN
+              </button>
+              <button type="button" style={s.smallBtn} onClick={() => setSettingPinTree(null)}>
+                Cancel
+              </button>
             </div>
           </form>
         </div>

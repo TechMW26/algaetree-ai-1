@@ -1,7 +1,7 @@
-import crypto from "crypto";
 import { type NextRequest } from "next/server";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { AlgaeTree } from "@/lib/models/AlgaeTree";
+import { verifyPassword } from "@/lib/auth/password";
 import {
   setTreeGuestCookie,
   signTreeGuestToken,
@@ -72,32 +72,14 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     treeId,
     publicAccessKey: accessKey,
     isActive: true,
-  }).select("treeId");
+  }).select("+publicPin");
   if (!tree) return fail("This dashboard link is invalid", 404);
 
-  const baseUrl = process.env.NEXT_PUBLIC_FIREBASE_RTDB_URL;
-  if (!baseUrl) return fail("Firebase not configured", 500);
-  const node = treeId.startsWith("AIAT") ? "AiAlgeeTree" : "AlgeeTree";
-
-  let configuredPin: unknown;
-  try {
-    const response = await fetch(
-      `${baseUrl.replace(/\/$/, "")}/${node}/${encodeURIComponent(treeId)}/DisplayPin.json`,
-      { cache: "no-store" },
-    );
-    if (!response.ok) return fail("Could not verify PIN", 502);
-    configuredPin = await response.json();
-  } catch {
-    return fail("Could not verify PIN", 502);
-  }
-
-  if (configuredPin == null || String(configuredPin).trim() === "") {
+  if (!tree.publicPin) {
     return fail("Dashboard PIN is not configured for this tree", 503);
   }
 
-  const expected = Buffer.from(String(configuredPin).trim());
-  const supplied = Buffer.from(pin);
-  const matches = expected.length === supplied.length && crypto.timingSafeEqual(expected, supplied);
+  const matches = await verifyPassword(pin, tree.publicPin);
   if (!matches) {
     const latest = attempts.get(attemptKey);
     attempts.set(attemptKey, {

@@ -88,12 +88,12 @@
 }
 
 /* ===== INCOMPATIBLE DEVICE SCREEN ===== */
-/* Dashboard is designed for landscape screens ≥ 1024px wide.                      */
-/* On anything smaller or portrait, show a "please switch device" message.          */
+/* Only portrait mobile screens need the compatibility notice.                      */
+/* Landscape screens render the responsive dashboard at every supported width.      */
 .dash-compat-guard {
   display: none;
 }
-@media (max-width: 1023px), (orientation: portrait) {
+@media (max-width: 767px) and (orientation: portrait) {
   .dash-compat-guard {
     display: flex !important;
     position: fixed;
@@ -244,15 +244,43 @@
 .talk-topbar { display: flex; }
 .talk-side-panel { display: flex; }
 
-/* ===== DASHBOARD — default display ===== */
-.dash-nav-tabs { display: flex; }
+/* ===== DASHBOARD — landscape layout ===== */
+.dash-grid {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.dash-grid > * {
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+.dash-system-control-card {
+  min-width: 0;
+  min-height: 0;
+}
+.dash-system-controls-viewport {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.dash-system-control-panel {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
 .dash-footer {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: center;
   gap: 18px;
-  min-height: 84px;
+  min-height: 84px !important;
   padding: 14px 24px;
 }
 
@@ -339,62 +367,6 @@
     position: fixed !important;
     z-index: 10 !important;
   }
-
-  /* ── Dashboard page ── */
-  .dash-nav-tabs { display: none !important; }
-  .dash-mobile-menu-btn { display: flex !important; }
-  .dash-mobile-menu-overlay { display: block !important; }
-  .dash-mobile-menu-panel { display: flex !important; }
-
-  .dash-grid {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
-    grid-template-rows: auto !important;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    padding: 12px 12px !important;
-    gap: 12px !important;
-  }
-
-  .dash-grid > * {
-    min-width: 0 !important;
-    overflow: hidden !important;
-  }
-
-  .dash-hero { display: none !important; }
-  .dash-desktop-cta { display: none !important; }
-
-  .dash-mobile-efficiency { display: contents !important; }
-
-  /* Biomass & CTA: each full-width on its own row */
-  .dash-mobile-biomass {
-    grid-column: 1 / -1 !important;
-  }
-  .dash-mobile-cta {
-    display: flex !important;
-    grid-column: 1 / -1 !important;
-    order: 90 !important;
-  }
-
-  .dash-footer {
-    grid-column: 1 / -1 !important;
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
-    gap: 12px !important;
-    padding: 16px !important;
-    min-height: 0 !important;
-    order: 100 !important;
-  }
-
-  /* Navbar mobile adjustments */
-  .dash-time { display: none !important; }
-  .dash-navbar {
-    margin: 10px 12px 0 !important;
-    padding: 10px 16px !important;
-    border-radius: 14px !important;
-  }
-
-  html, body { overflow: auto; }
 }
 
 /* ===== LEAFLET MAP — Network page ===== */

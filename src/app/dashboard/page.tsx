@@ -749,7 +749,7 @@ function DashboardClock() {
   }, []);
 
   return (
-    <span className="font-semibold tabular-nums dash-time" style={{ fontSize: 15, color: "var(--text-3)" }}>
+    <span className="font-semibold tabular-nums" style={{ fontSize: 15, color: "var(--text-3)" }}>
       {time}
     </span>
   );
@@ -770,7 +770,6 @@ function DashboardPageContent() {
   const router = useRouter();
   const [navigating, setNavigating] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [explorerCycleIndex, setExplorerCycleIndex] = useState(0);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [cooldownLeftSec, setCooldownLeftSec] = useState(0);
@@ -1239,13 +1238,6 @@ function DashboardPageContent() {
     { id: "algae", label: "Algae System" },
     { id: "settings", label: "System Info" },
   ];
-  const tabIcons = [
-    <svg key="t0" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.43A2 2 0 0 1 14 9.53V2" /><path d="M8.5 2h7" /></svg>,
-    <svg key="t1" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /><circle cx="12" cy="12" r="10" /></svg>,
-    <svg key="t2" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>,
-    <svg key="t3" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>,
-    <svg key="t4" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><path d="M6 6h.01M6 18h.01" /></svg>,
-  ];
   const treeOffline = d.location !== "Loading..." && !d.networkUp;
   const dashboardScale = Math.min(1, viewport.width / DASH_BASE_WIDTH, viewport.height / DASH_BASE_HEIGHT);
   const scaledDashboard = dashboardScale < 0.999;
@@ -1262,7 +1254,7 @@ function DashboardPageContent() {
     <div className="dash-fullscreen flex flex-col" style={{ background: "var(--bg)" }}>
 
       {/* ────── INCOMPATIBLE DEVICE SCREEN ────── */}
-      {/* Shown via CSS on screens < 1024px wide or portrait orientation */}
+      {/* Shown only on portrait mobile screens; every landscape screen uses this layout. */}
       <div className="dash-compat-guard">
         <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(34,197,94,0.1)", border: "2px solid rgba(34,197,94,0.25)", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="#22c55e" strokeWidth="2" strokeLinecap="round">
@@ -1290,8 +1282,8 @@ function DashboardPageContent() {
 
       <div
         style={{
-          ...dashboardContentScaleStyle,
           ...(treeOffline ? offlineContentStyle : dashboardContentStyle),
+          ...dashboardContentScaleStyle,
         }}
       >
 
@@ -1387,7 +1379,7 @@ function DashboardPageContent() {
           <span className="font-bold" style={{ fontSize: 18 }}>AlgaeTree</span>
         </button>
 
-        <div className="items-center dash-nav-tabs" style={{ gap: 8 }}>
+        <div className="items-center" style={{ display: "flex", gap: 8 }}>
           {tabLabels.map((t, i) => (
             <button
               key={t}
@@ -1407,91 +1399,10 @@ function DashboardPageContent() {
           ))}
         </div>
 
-        {/* Mobile hamburger */}
-        <button
-          className="dash-mobile-menu-btn cursor-pointer"
-          onClick={() => setMenuOpen(v => !v)}
-          style={{ display: "none", background: "none", border: "none", padding: 8, color: "var(--text-1)" }}
-          aria-label="Menu"
-        >
-          <motion.div animate={menuOpen ? { rotate: 180 } : { rotate: 0 }} transition={{ duration: 0.3 }}>
-            {menuOpen
-              ? <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-              : <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
-            }
-          </motion.div>
-        </button>
-
         <div className="flex items-center" style={{ gap: 14 }}>
           <DashboardClock />
         </div>
       </motion.nav>
-
-      {/* ────── MOBILE MENU OVERLAY ────── */}
-      <motion.div
-        className="dash-mobile-menu-overlay"
-        initial={false}
-        animate={menuOpen ? { opacity: 1, pointerEvents: "auto" as const } : { opacity: 0, pointerEvents: "none" as const }}
-        transition={{ duration: 0.25 }}
-        onClick={() => setMenuOpen(false)}
-        style={{
-          display: "none", position: "fixed", inset: 0, zIndex: 50,
-          background: "rgba(0,0,0,0.6)",
-        }}
-      />
-      <motion.div
-        className="dash-mobile-menu-panel"
-        initial={false}
-        animate={menuOpen ? { x: 0, opacity: 1 } : { x: "100%", opacity: 0 }}
-        transition={{ type: "spring", damping: 28, stiffness: 300 }}
-        style={{
-          display: "none", position: "fixed", top: 0, right: 0, bottom: 0,
-          width: "75vw", maxWidth: 320, zIndex: 51,
-          background: "var(--bg)", borderLeft: "1px solid var(--border)",
-          padding: "80px 24px 32px", flexDirection: "column", gap: 8,
-        }}
-      >
-        <p className="font-bold uppercase tracking-wider" style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 8, paddingLeft: 16 }}>Dashboard</p>
-        {tabLabels.map((t, i) => (
-          <motion.button
-            key={t}
-            onClick={() => { setActiveTab(i); setMenuOpen(false); }}
-            className="flex items-center cursor-pointer font-semibold"
-            style={{
-              gap: 14, padding: "14px 16px", borderRadius: 16, fontSize: 15, width: "100%",
-              background: i === activeTab ? "rgba(34,197,94,0.12)" : "transparent",
-              color: i === activeTab ? "#4ade80" : "var(--text-2)",
-              border: i === activeTab ? "1px solid rgba(34,197,94,0.2)" : "1px solid transparent",
-            }}
-            initial={{ x: 40, opacity: 0 }}
-            animate={menuOpen ? { x: 0, opacity: 1 } : { x: 40, opacity: 0 }}
-            transition={{ delay: menuOpen ? 0.05 + i * 0.06 : 0, duration: 0.3 }}
-          >
-            {tabIcons[i]}
-            {t}
-          </motion.button>
-        ))}
-
-        <div style={{ flex: 1 }} />
-        <motion.button
-          onClick={() => { setNavigating(true); setMenuOpen(false); router.push(talkPath); }}
-          disabled={navigating}
-          className="glow-btn flex items-center justify-center cursor-pointer"
-          style={{
-            gap: 10, padding: "16px 0", borderRadius: 16, width: "100%",
-            background: "linear-gradient(135deg, #16a34a, #22c55e)",
-            color: "#fff", fontWeight: 700, fontSize: 15, border: "none",
-            boxShadow: "0 8px 30px rgba(34,197,94,0.3)",
-          }}
-          initial={{ y: 20, opacity: 0 }}
-          animate={menuOpen ? { y: 0, opacity: 1 } : { y: 20, opacity: 0 }}
-          transition={{ delay: menuOpen ? 0.3 : 0, duration: 0.35 }}
-          whileTap={{ scale: 0.97 }}
-        >
-          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" /><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" /></svg>
-          <span>Talk to the Tree</span>
-        </motion.button>
-      </motion.div>
 
       {/* ────── BENTO GRID ────── */}
       <AnimatePresence mode="wait">
@@ -1501,7 +1412,7 @@ function DashboardPageContent() {
             padding: "16px 20px 8px",
             gap: 14,
             gridTemplateColumns: activeTab === 0 ? "1.1fr 1fr 1fr" : "1fr 1fr 1fr",
-            gridTemplateRows: activeTab === 0 ? "1fr 1fr auto" : "1fr 1fr auto",
+            gridTemplateRows: activeTab === 0 ? "minmax(0, 1fr) minmax(0, 1fr) auto" : "minmax(0, 1fr) minmax(0, 1fr) auto",
           }}
           variants={stagger}
           initial="hidden"
@@ -1516,7 +1427,7 @@ function DashboardPageContent() {
             <>
               {/* ── HERO CARD (spans 1 col, 2 rows) — hidden on mobile ── */}
               <motion.div
-                className="card flex flex-col dash-hero"
+                className="card flex flex-col"
                 style={{
                   padding: 32, gridRow: "1 / 3",
                   background: "var(--surface)",
@@ -1636,13 +1547,8 @@ function DashboardPageContent() {
               <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" /></svg>} label="TDS" value={d.tds} unit="ppm" min={GAUGE_RANGES.bioReactor.tds.min} max={GAUGE_RANGES.bioReactor.tds.max} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
               <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" /></svg>} label="Temperature" value={d.temp} unit="°C" min={GAUGE_RANGES.bioReactor.temperature.min} max={GAUGE_RANGES.bioReactor.temperature.max} color="#f97316" delay={0.4} tint="rgba(249,115,22,0.04)" />
 
-              {/* Efficiency gauge (mobile only) */}
-              <div className="dash-mobile-efficiency" style={{ display: "none" }}>
-                <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>} label="Efficiency" value={d.efficiency} unit="%" min={GAUGE_RANGES.bioReactor.efficiency.min} max={GAUGE_RANGES.bioReactor.efficiency.max} color="#4ade80" delay={0.35} tint="rgba(34,197,94,0.04)" />
-              </div>
-
               {/* Biomass + Growth */}
-              <motion.div className="card flex flex-col dash-mobile-biomass" style={{ padding: 28, background: "var(--surface)", ['--card-tint' as React.CSSProperties & string]: 'rgba(34,197,94,0.12)' } as React.CSSProperties} variants={rise}>
+              <motion.div className="card flex flex-col" style={{ padding: 28, background: "var(--surface)", ['--card-tint' as React.CSSProperties & string]: 'rgba(34,197,94,0.12)' } as React.CSSProperties} variants={rise}>
                 <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
                   <div className="flex items-center" style={{ gap: 8 }}>
                     <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M7 20h10" /><path d="M10 20c5.5-2.5.8-6.4 3-10" /><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z" /><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z" /></svg>
@@ -1671,10 +1577,6 @@ function DashboardPageContent() {
                 </div>
               </motion.div>
 
-              {/* Mobile CTA */}
-              <motion.button className="glow-btn dash-mobile-cta cursor-pointer" style={{ display: "none", alignItems: "center", justifyContent: "center", gap: 10, padding: "20px 16px", borderRadius: 20, background: navigating ? "linear-gradient(135deg, #15803d, #16a34a)" : "linear-gradient(135deg, #16a34a,#22c55e)", color: "#fff", fontWeight: 700, fontSize: 15, border: "1px solid rgba(34,197,94,0.3)", boxShadow: "0 8px 30px rgba(34,197,94,0.3)", opacity: navigating ? 0.85 : 1 }} variants={rise} onClick={() => { setNavigating(true); router.push(talkPath); }} disabled={navigating} whileTap={navigating ? {} : { scale: 0.97 }}>
-                {navigating ? (<><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" strokeWidth="3" /><path d="M12 2a10 10 0 0 1 10 10" stroke="#fff" strokeWidth="3" strokeLinecap="round" /></svg><span>Loading...</span></>) : (<><svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" /><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" /></svg><span>Talk to the Tree</span></>)}
-              </motion.button>
             </>
           )}
 
@@ -1683,7 +1585,7 @@ function DashboardPageContent() {
             <>
               {/* Hero: Environment overview */}
               <motion.div
-                className="card flex flex-col dash-hero"
+                className="card flex flex-col"
                 style={{
                   padding: 32, gridRow: "1 / 3",
                   background: "var(--surface)",
@@ -1753,7 +1655,7 @@ function DashboardPageContent() {
             <>
               {/* Hero: Performance overview */}
               <motion.div
-                className="card flex flex-col dash-hero"
+                className="card flex flex-col"
                 style={{
                   padding: 32, gridRow: "1 / 3",
                   background: "var(--surface)",
@@ -1872,7 +1774,7 @@ function DashboardPageContent() {
           {activeTab === 3 && (
             <>
               <motion.div
-                className="card flex flex-col dash-hero"
+                className="card flex flex-col"
                 style={{
                   padding: 28, gridRow: "1 / 3",
                   background: "var(--surface)",
@@ -2027,7 +1929,7 @@ function DashboardPageContent() {
             <>
               {/* Hero: System Status */}
               <motion.div
-                className="card flex flex-col dash-hero"
+                className="card flex flex-col"
                 style={{
                   padding: 32, gridRow: "1 / 3",
                   background: "var(--surface)",
@@ -2091,7 +1993,7 @@ function DashboardPageContent() {
                             right: 0,
                             bottom: 0,
                             height: 220,
-                            background: "linear-gradient(to top, #ffffff 0%, #ffffff 55%, transparent 100%)",
+                            background: "linear-gradient(to top, var(--surface) 0%, var(--surface) 55%, transparent 100%)",
                             borderBottomLeftRadius: 24,
                             borderBottomRightRadius: 24,
                             zIndex: 1,
@@ -2125,7 +2027,7 @@ function DashboardPageContent() {
                                 borderRadius: 999,
                                 overflow: "hidden",
                                 padding: 0,
-                                background: "linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(226,232,240,0.18) 100%)",
+                                background: "linear-gradient(180deg, var(--surface-hover) 0%, var(--track) 100%)",
                               }}
                             >
 
@@ -2205,7 +2107,7 @@ function DashboardPageContent() {
 
               {/* Device Control (single large card) */}
               <motion.div
-                className="card flex flex-col"
+                className="card flex flex-col dash-system-control-card"
                 style={{
                   padding: 20,
                   gridColumn: "2 / 4",
@@ -2300,9 +2202,9 @@ function DashboardPageContent() {
                   })}
                 </div>
 
-                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingRight: 2 }}>
+                <div className="dash-system-controls-viewport">
                   {controlPanelTab === "flow" && (
-                    <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(15,23,42,0.08), rgba(56,189,248,0.04))", display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div className="rounded-2xl dash-system-control-panel" role="region" aria-label="Flow controls" tabIndex={0} style={{ padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(15,23,42,0.08), rgba(56,189,248,0.04))", display: "flex", flexDirection: "column", gap: 12 }}>
                       <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                         <ToggleChip label="Refilling" enabled={uiOperations.Filling} busy={controlBusy} onToggle={() => { void toggleFluidOperation("Filling"); }} />
                         <ToggleChip label="Drain" enabled={uiOperations.Drain} busy={controlBusy} onToggle={() => { void toggleFluidOperation("Drain"); }} />
@@ -2311,7 +2213,7 @@ function DashboardPageContent() {
                         <ToggleChip label="Solar Cleaning" enabled={uiOperations.SolarCleaning} busy={controlBusy} onToggle={() => { void toggleOperation("SolarCleaning"); }} />
                       </div>
 
-                      <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginTop: "auto" }}>
+                      <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: "auto" }}>
                         <RoundKnob
                           label="Bubble ON"
                           value={uiAirBubblesTiming.on}
@@ -2355,7 +2257,7 @@ function DashboardPageContent() {
                   )}
 
                   {controlPanelTab === "lighting" && (
-                    <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(34,197,94,0.12), rgba(56,189,248,0.04))", display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div className="rounded-2xl dash-system-control-panel" role="region" aria-label="Lighting controls" tabIndex={0} style={{ padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(34,197,94,0.12), rgba(56,189,248,0.04))", display: "flex", flexDirection: "column", gap: 12 }}>
                       <div style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
                         <div className="rounded-xl" style={{ flex: "1 1 auto", minWidth: 0, padding: "10px 12px", border: "1px solid var(--border)", background: "var(--mini-bg)" }}>
                           <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
@@ -2477,8 +2379,8 @@ function DashboardPageContent() {
                   )}
 
                   {controlPanelTab === "algae" && (
-                    <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(34,197,94,0.12), rgba(22,163,74,0.05))", display: "flex", flexDirection: "column", gap: 12 }}>
-                      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "flex-start", gap: 10 }}>
+                    <div className="rounded-2xl dash-system-control-panel" role="region" aria-label="Algae system controls" tabIndex={0} style={{ padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(34,197,94,0.12), rgba(22,163,74,0.05))", display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "flex-start", gap: 8 }}>
                         {([
                           "Motor1Volume",
                           "Motor2Volume",
@@ -2486,7 +2388,7 @@ function DashboardPageContent() {
                           "Motor4Volume",
                           "Motor5Volume",
                         ] as const).map((k, idx) => (
-                          <div key={k} style={{ flex: "0 1 calc(33.333% - 10px)", maxWidth: "calc(33.333% - 10px)", minWidth: 260 }}>
+                          <div key={k} style={{ flex: "0 1 calc(33.333% - 8px)", maxWidth: "calc(33.333% - 8px)", minWidth: 180 }}>
                             <RoundKnob
                               label={`Dosing M${idx + 1}`}
                               value={nutritionDraft[k]}
@@ -2518,7 +2420,7 @@ function DashboardPageContent() {
                   )}
 
                   {controlPanelTab === "settings" && (
-                    <div className="rounded-2xl" style={{ minHeight: "100%", padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(148,163,184,0.14), rgba(30,41,59,0.06))", display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div className="rounded-2xl dash-system-control-panel" role="region" aria-label="System details" tabIndex={0} style={{ padding: 12, border: "1px solid var(--border)", background: "linear-gradient(150deg, rgba(148,163,184,0.14), rgba(30,41,59,0.06))", display: "flex", flexDirection: "column", gap: 12 }}>
                       <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
                         {[
                           { l: "Cooldown", v: cooldownLeftSec > 0 ? `${cooldownLeftSec}s` : "Ready" },
@@ -2741,6 +2643,7 @@ const dashboardContentStyle: React.CSSProperties = {
   height: "100%",
   display: "flex",
   flexDirection: "column",
+  background: "var(--bg)",
 };
 
 const dashboardHeaderFadeStyle: React.CSSProperties = {
@@ -2783,7 +2686,6 @@ const offlinePanelStyle: React.CSSProperties = {
   borderRadius: 24,
   border: "1px solid rgba(249,115,22,0.24)",
   background: "var(--surface)",
-  boxShadow: "0 24px 80px rgba(15,23,42,0.22)",
   boxShadow: "0 24px 80px rgba(15,23,42,0.22)",
   padding: "30px 28px",
   textAlign: "center",

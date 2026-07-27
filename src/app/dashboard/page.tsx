@@ -22,6 +22,7 @@ const clampPercent = (value: number) => Math.min(Math.max(value, 0), 100);
 const clampNumber = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const DASH_BASE_WIDTH = 1366;
 const DASH_BASE_HEIGHT = 900;
+const DASH_NAV_HEIGHT = 64;
 const CONTROL_COOLDOWN_MS = 2000;
 
 type ControlPanelTab =
@@ -792,7 +793,7 @@ function DashboardPageContent() {
     Motor4Volume: 0,
     Motor5Volume: 0,
   });
-  const [viewport, setViewport] = useState({ width: DASH_BASE_WIDTH, height: DASH_BASE_HEIGHT });
+  const [viewport, setViewport] = useState({ width: DASH_BASE_WIDTH, height: DASH_BASE_HEIGHT, edgeGap: 16 });
   // Refs mirror the latest draft state so commit handlers (whose closures are
   // captured at mousedown time by the knob's drag listeners) always read the
   // most recently dragged-to value instead of the value at drag start.
@@ -961,7 +962,12 @@ function DashboardPageContent() {
 
   useEffect(() => {
     function syncViewport() {
-      setViewport({ width: window.innerWidth, height: window.innerHeight });
+      const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize);
+      setViewport({
+        width: window.innerWidth,
+        height: window.innerHeight,
+        edgeGap: Number.isFinite(rootFontSize) ? rootFontSize : 16,
+      });
     }
     syncViewport();
     window.addEventListener("resize", syncViewport);
@@ -1239,16 +1245,23 @@ function DashboardPageContent() {
     { id: "settings", label: "System Info" },
   ];
   const treeOffline = d.location !== "Loading..." && !d.networkUp;
-  const dashboardScale = Math.min(1, viewport.width / DASH_BASE_WIDTH, viewport.height / DASH_BASE_HEIGHT);
-  const scaledDashboard = dashboardScale < 0.999;
-  const dashboardContentScaleStyle: React.CSSProperties = scaledDashboard
-    ? {
-        width: DASH_BASE_WIDTH,
-        height: DASH_BASE_HEIGHT,
-        transform: `translateX(${Math.max(0, (viewport.width - DASH_BASE_WIDTH * dashboardScale) / 2)}px) scale(${dashboardScale})`,
-        transformOrigin: "top left",
-      }
-    : { width: "100%", height: "100%" };
+  const dashboardAvailableHeight = Math.max(0, viewport.height - viewport.edgeGap * 2);
+  const dashboardScale = Math.max(
+    0.01,
+    Math.min(
+      1,
+      viewport.width / DASH_BASE_WIDTH,
+      dashboardAvailableHeight / DASH_BASE_HEIGHT,
+    ),
+  );
+  const dashboardCanvasWidth = viewport.width / dashboardScale;
+  const dashboardCanvasHeight = dashboardAvailableHeight / dashboardScale;
+  const dashboardContentScaleStyle: React.CSSProperties = {
+    width: dashboardCanvasWidth,
+    height: dashboardCanvasHeight,
+    transform: `scale(${dashboardScale})`,
+    transformOrigin: "top left",
+  };
 
   return (
     <div className="dash-fullscreen flex flex-col" style={{ background: "var(--bg)" }}>
@@ -1364,7 +1377,7 @@ function DashboardPageContent() {
       <div style={dashboardHeaderFadeStyle} />
       <motion.nav
         className="card relative z-10 flex items-center justify-between dash-navbar"
-        style={{ margin: "20px 24px 0", padding: "14px 28px", borderRadius: 20, minHeight: 64 }}
+        style={{ margin: "0 24px", padding: "14px 28px", borderRadius: 20, minHeight: 64 }}
         initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
@@ -1409,10 +1422,13 @@ function DashboardPageContent() {
         <motion.main
           className="relative z-10 flex-1 grid dash-grid"
           style={{
-            padding: "16px 20px 8px",
+            flex: "0 0 auto",
+            height: Math.max(0, dashboardCanvasHeight - DASH_NAV_HEIGHT),
+            minHeight: 0,
+            padding: "16px 20px 0",
             gap: 14,
             gridTemplateColumns: activeTab === 0 ? "1.1fr 1fr 1fr" : "1fr 1fr 1fr",
-            gridTemplateRows: activeTab === 0 ? "minmax(0, 1fr) minmax(0, 1fr) auto" : "minmax(0, 1fr) minmax(0, 1fr) auto",
+            gridTemplateRows: "minmax(0, 1fr) minmax(0, 1fr) 84px",
           }}
           variants={stagger}
           initial="hidden"
@@ -2547,7 +2563,6 @@ function DashboardPageContent() {
           <motion.footer
             className="card flex items-center justify-between dash-footer"
             style={{
-              gridColumn: "1 / -1",
               background: "var(--surface)",
             }}
             variants={rise}
@@ -2641,6 +2656,7 @@ function DashboardPageContent() {
 const dashboardContentStyle: React.CSSProperties = {
   position: "relative",
   height: "100%",
+  minHeight: 0,
   display: "flex",
   flexDirection: "column",
   background: "var(--bg)",

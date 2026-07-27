@@ -76,14 +76,14 @@
 }
 
 /* ===== FULL-SCREEN LAYOUT (100dvh) ===== */
-/* dvh = dynamic viewport height: shrinks as mobile browser chrome appears/hides.  */
-/* This eliminates the "dead space at bottom" on iOS Safari / Android Chrome.      */
+/* Keep the dashboard exactly 1em from the top and bottom viewport edges.           */
 .dash-fullscreen {
   width: 100vw !important;
   height: 100vh !important;
   height: 100dvh !important;
   min-height: 100vh !important;
   min-height: 100dvh !important;
+  padding-block: 1em !important;
   overflow: hidden !important;
 }
 
@@ -275,7 +275,10 @@
   scrollbar-gutter: stable;
 }
 .dash-footer {
+  position: relative;
   grid-column: 1 / -1;
+  grid-row: 3;
+  z-index: 20;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: center;

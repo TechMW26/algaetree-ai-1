@@ -1,4 +1,4 @@
-const CACHE_NAME = "algaetree-v2";
+const CACHE_NAME = "algaetree-v3";
 const PRECACHE_URLS = ["/", "/talk"];
 
 // Files that should never be cached by the SW
@@ -13,11 +13,20 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    caches.keys().then(async (keys) => {
+      const oldAlgaeTreeCache = keys.some(
+        (key) => key.startsWith("algaetree-") && key !== CACHE_NAME
+      );
+
+      await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+      await self.clients.claim();
+
+      if (oldAlgaeTreeCache) {
+        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        await Promise.all(clients.map((client) => client.navigate(client.url)));
+      }
+    })
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {

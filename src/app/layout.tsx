@@ -59,7 +59,7 @@ export default function RootLayout({
         <PageTransition>{children}</PageTransition>
         <script
           dangerouslySetInnerHTML={{
-            __html: `if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("/sw.js")})}`,
+            __html: `if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"}).then(registration=>registration.update()).catch(()=>{})})}`,
           }}
         />
       </body>

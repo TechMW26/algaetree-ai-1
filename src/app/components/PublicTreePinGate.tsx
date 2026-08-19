@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -18,6 +17,21 @@ export default function PublicTreePinGate({
 
   const dashboardPath = `/dashboard?tree=${encodeURIComponent(treeId)}&share=${encodeURIComponent(accessKey)}`;
   const accessApi = `/api/public-tree/${encodeURIComponent(treeId)}/${encodeURIComponent(accessKey)}`;
+
+  const appendDigit = (digit: string) => {
+    setError("");
+    setPin((current) => current.length < 12 ? `${current}${digit}` : current);
+  };
+
+  const removeDigit = () => {
+    setError("");
+    setPin((current) => current.slice(0, -1));
+  };
+
+  const clearPin = () => {
+    setError("");
+    setPin("");
+  };
 
   useEffect(() => {
     let active = true;
@@ -60,33 +74,75 @@ export default function PublicTreePinGate({
   };
 
   return (
-    <main style={s.page}>
-      <form onSubmit={verifyPin} style={s.card}>
-        <Image src="/favicon.png" alt="AlgaeTree" width={54} height={54} style={{ borderRadius: 14 }} priority />
-        <div style={{ textAlign: "center" }}>
-          <h1 style={s.title}>Open AlgaeTree Dashboard</h1>
-          <p style={s.subtitle}>{treeId}</p>
+    <main className="public-pin-page" style={s.page}>
+      <form className="public-pin-card" onSubmit={verifyPin} style={s.card}>
+        <div className="public-pin-brand" style={s.brand}>
+          <div style={{ textAlign: "center" }}>
+            <h1 style={s.title}>Dashboard Access</h1>
+            <p style={s.subtitle}>{treeId}</p>
+          </div>
         </div>
-        <label htmlFor="tree-pin" style={s.label}>Dashboard PIN</label>
-        <input
-          id="tree-pin"
-          type="password"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          maxLength={12}
-          value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-          placeholder="Enter PIN"
-          autoComplete="one-time-code"
-          autoFocus
-          required
-          style={s.input}
-        />
-        {error && <div role="alert" style={s.error}>{error}</div>}
-        <button type="submit" disabled={loading || !pin} style={s.button}>
+        <div className="public-pin-entry" style={s.entry}>
+          <label htmlFor="tree-pin" style={s.label}>Dashboard PIN</label>
+          <input
+            id="tree-pin"
+            type="password"
+            inputMode="none"
+            maxLength={12}
+            value={pin}
+            placeholder="Enter PIN"
+            autoComplete="off"
+            readOnly
+            required
+            aria-label={`${pin.length} PIN digits entered`}
+            style={s.input}
+          />
+          {error && <div role="alert" style={s.error}>{error}</div>}
+        </div>
+        <div className="public-pin-keypad" style={s.keypad} aria-label="Dashboard PIN keypad">
+          {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((digit) => (
+            <button
+              key={digit}
+              type="button"
+              onClick={() => appendDigit(digit)}
+              disabled={loading || pin.length >= 12}
+              aria-label={`Enter ${digit}`}
+              style={s.key}
+            >
+              {digit}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={clearPin}
+            disabled={loading || !pin}
+            aria-label="Clear PIN"
+            style={{ ...s.key, ...s.actionKey }}
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => appendDigit("0")}
+            disabled={loading || pin.length >= 12}
+            aria-label="Enter 0"
+            style={s.key}
+          >
+            0
+          </button>
+          <button
+            type="button"
+            onClick={removeDigit}
+            disabled={loading || !pin}
+            aria-label="Delete last PIN digit"
+            style={{ ...s.key, ...s.actionKey }}
+          >
+            Delete
+          </button>
+        </div>
+        <button className="public-pin-submit" type="submit" disabled={loading || !pin} style={s.button}>
           {loading ? "Verifying…" : "Open dashboard"}
         </button>
-        <p style={s.note}>Use the PIN configured on this AlgaeTree.</p>
       </form>
     </main>
   );
@@ -94,11 +150,13 @@ export default function PublicTreePinGate({
 
 const s: Record<string, React.CSSProperties> = {
   page: {
-    minHeight: "100dvh",
+    height: "100dvh",
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     padding: 20,
+    overflowY: "auto",
     background: "radial-gradient(900px 500px at 50% 0%, rgba(34,197,94,0.14), transparent 65%), var(--bg)",
   },
   card: {
@@ -107,15 +165,18 @@ const s: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    gap: 14,
-    padding: "34px 30px",
+    gap: 12,
+    padding: "clamp(20px, 4vh, 34px) 30px",
     border: "1px solid var(--border)",
     borderRadius: 24,
     background: "var(--surface)",
     boxShadow: "0 30px 70px -30px rgba(0,0,0,0.45)",
+    margin: "auto 0",
   },
+  brand: { display: "flex", flexDirection: "column", alignItems: "center" },
   title: { margin: 0, fontSize: 23, fontWeight: 900, color: "var(--text-1)" },
   subtitle: { margin: "6px 0 0", color: "#16a34a", fontSize: 13, fontWeight: 800 },
+  entry: { width: "100%", display: "flex", flexDirection: "column", gap: 10 },
   label: { width: "100%", marginTop: 8, color: "var(--text-2)", fontSize: 12, fontWeight: 700 },
   input: {
     width: "100%",
@@ -130,7 +191,27 @@ const s: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     letterSpacing: 8,
   },
+  keypad: {
+    width: "100%",
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 9,
+  },
+  key: {
+    minHeight: 52,
+    border: "1px solid var(--border)",
+    borderRadius: 13,
+    background: "var(--surface-hover)",
+    color: "var(--text-1)",
+    fontSize: 20,
+    fontWeight: 800,
+    cursor: "pointer",
+    touchAction: "manipulation",
+  },
+  actionKey: {
+    color: "var(--text-2)",
+    fontSize: 12,
+  },
   error: { width: "100%", padding: "9px 12px", borderRadius: 10, background: "rgba(239,68,68,0.12)", color: "#dc2626", fontSize: 13 },
   button: { width: "100%", marginTop: 4, padding: "13px 16px", border: 0, borderRadius: 13, background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#04140a", fontSize: 14, fontWeight: 800, cursor: "pointer" },
-  note: { margin: "2px 0 0", color: "var(--text-3)", fontSize: 11.5 },
 };

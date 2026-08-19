@@ -314,6 +314,28 @@
   overflow-wrap: anywhere;
 }
 
+/* ===== PUBLIC DASHBOARD PIN — compact landscape ===== */
+@media (max-height: 600px) and (orientation: landscape) {
+  .public-pin-card {
+    max-width: 760px !important;
+    display: grid !important;
+    grid-template-columns: minmax(220px, 0.85fr) minmax(280px, 1fr);
+    grid-template-areas:
+      "brand keypad"
+      "entry keypad"
+      "submit keypad";
+    align-items: center !important;
+    gap: 10px 24px !important;
+    padding: 18px 24px !important;
+  }
+
+  .public-pin-brand { grid-area: brand; }
+  .public-pin-entry { grid-area: entry; }
+  .public-pin-keypad { grid-area: keypad; }
+  .public-pin-submit { grid-area: submit; }
+  .public-pin-keypad button { min-height: 44px !important; }
+}
+
 /* ===== PERFORMANCE MODE (touch / tablet) =====
    iPad-class devices struggle with heavy backdrop blur + continuous ambient animations. */
 @media (hover: none), (pointer: coarse) {

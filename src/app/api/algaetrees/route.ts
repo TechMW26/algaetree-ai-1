@@ -7,33 +7,17 @@ import { createTreeSchema } from "@/lib/validation/management";
 import { ok, fail } from "@/lib/http";
 import { ROLES } from "@/lib/constants";
 import { getAccessibleTreeIds } from "@/lib/services/access";
-
-function parseDdMmYyyy(value?: string): Date | null {
-  if (!value) return null;
-  const [dd, mm, yyyy] = value.split("/").map(Number);
-  if (!dd || !mm || !yyyy) return null;
-  const dt = new Date(yyyy, mm - 1, dd);
-  return Number.isNaN(dt.getTime()) ? null : dt;
-}
-
-function diffDays(fromDate?: string): number {
-  const start = parseDdMmYyyy(fromDate);
-  if (!start) return Number.POSITIVE_INFINITY;
-  const ms = Date.now() - start.getTime();
-  return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
-}
+import { asRecord, isDeviceOnline, readDeviceLocation, resolveDevice } from "@/lib/device/rtdb";
 
 async function syncFirebaseTreeIdsToRegistry(normUrl: string) {
-  const [algeeRes, aiRes] = await Promise.all([
-    fetch(`${normUrl}/AlgeeTree.json?shallow=true`, { cache: "no-store" }),
-    fetch(`${normUrl}/AiAlgeeTree.json?shallow=true`, { cache: "no-store" }),
-  ]);
-  const algeeData: Record<string, unknown> = algeeRes.ok ? await algeeRes.json() : {};
-  const aiData: Record<string, unknown> = aiRes.ok ? await aiRes.json() : {};
-  const keys = [
-    ...Object.keys(algeeData).filter((k) => k !== "NoOfDevices"),
-    ...Object.keys(aiData).filter((k) => k !== "NoOfDevices"),
-  ];
+  const familyNames = ["AlgaeTree", "HomeAlgaeTree", "AlgeeTree", "AiAlgeeTree"];
+  const familyResponses = await Promise.all(
+    familyNames.map((family) => fetch(`${normUrl}/${family}.json?shallow=true`, { cache: "no-store" })),
+  );
+  const familyData = await Promise.all(
+    familyResponses.map(async (response) => response.ok ? (await response.json()) as Record<string, unknown> : {}),
+  );
+  const keys = familyData.flatMap((data) => Object.keys(data).filter((key) => key !== "NoOfDevices"));
   const uniqueKeys = [...new Set(keys)];
   if (uniqueKeys.length === 0) return;
 
@@ -90,36 +74,34 @@ export async function GET(req: NextRequest) {
   const treeEntries = await Promise.all(
     registryTrees.map(async (tree) => {
       const treeId = tree.treeId;
-      const node = treeId.startsWith("AIAT") ? "AiAlgeeTree" : "AlgeeTree";
       let name = tree.name || treeId;
       let location = tree.location || "";
+      let city = tree.city || "";
+      let lat = tree.lat;
+      let lng = tree.lng;
       let lastOnline = "";
       let online = false;
 
       try {
-        const [devRes, locRes, lastOnlineRes] = await Promise.all([
-          fetch(`${normUrl}/${node}/${encodeURIComponent(treeId)}/DeviceID.json`, { cache: "no-store" }),
-          fetch(`${normUrl}/${node}/${encodeURIComponent(treeId)}/Location.json`, { cache: "no-store" }),
-          fetch(`${normUrl}/${node}/${encodeURIComponent(treeId)}/LastOnline.json`, { cache: "no-store" }),
-        ]);
-
-        if (devRes.ok && (!tree.name || tree.name === treeId)) {
-          const devId = await devRes.json();
-          if (typeof devId === "string" && devId.trim()) name = devId;
-        }
-        if (locRes.ok && !tree.location) {
-          const loc = await locRes.json();
-          if (typeof loc === "string" && loc.trim()) location = loc;
-        }
-        if (lastOnlineRes.ok) {
-          const last = await lastOnlineRes.json();
-          if (last && typeof last === "object") {
-            const value = last as { Date?: unknown; Time?: unknown };
-            const date = typeof value.Date === "string" ? value.Date : "";
-            const time = typeof value.Time === "string" ? value.Time : "";
-            lastOnline = [date, time].filter(Boolean).join(" ");
-            online = diffDays(date) <= 1;
+        const device = await resolveDevice(normUrl, treeId);
+        if (device) {
+          const info = asRecord(device.data.DeviceInfo);
+          const deviceLocation = readDeviceLocation(device.data);
+          const last = asRecord(device.data.LastOnline);
+          const deviceId = info.DeviceID ?? device.data.DeviceID;
+          if ((!tree.name || tree.name === treeId) && typeof deviceId === "string" && deviceId.trim()) name = deviceId;
+          if (deviceLocation.name) {
+            location = deviceLocation.name;
+            if (!city) city = deviceLocation.name;
           }
+          if (deviceLocation.latitude != null && deviceLocation.longitude != null) {
+            lat = deviceLocation.latitude;
+            lng = deviceLocation.longitude;
+          }
+          const date = typeof last.Date === "string" ? last.Date : "";
+          const time = typeof last.Time === "string" ? last.Time : "";
+          lastOnline = [date, time].filter(Boolean).join(" ");
+          online = isDeviceOnline(device.data);
         }
       } catch {
         // Keep DB metadata and default offline status on Firebase failures.
@@ -129,9 +111,9 @@ export async function GET(req: NextRequest) {
         treeId,
         name,
         location,
-        city: tree.city || "",
-        lat: tree.lat,
-        lng: tree.lng,
+        city,
+        lat,
+        lng,
         online,
         lastOnline,
         isAi: treeId.startsWith("AIAT"),

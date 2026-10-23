@@ -6,7 +6,9 @@ import { Schema, model, models, type Model, type Types } from "mongoose";
  * map placement (id, display name, coordinates, location label).
  *
  * Live telemetry, device status and real-time data continue to live in Firebase
- * Realtime Database under /AlgeeTree/{treeId} and are NOT duplicated here.
+ * Realtime Database under /AlgaeTree/{treeId} or /HomeAlgaeTree/{treeId}
+ * and are NOT duplicated here. Legacy roots are read only as a compatibility
+ * fallback while older installations are migrated.
  */
 export interface IAlgaeTree {
   _id: Types.ObjectId;

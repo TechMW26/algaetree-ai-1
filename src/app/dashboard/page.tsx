@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense, useState, useEffect, useRef, useMemo, type ReactNode } from "react";
+import { Suspense, useState, useEffect, useRef, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLiveData } from "../hooks/useLiveData";
 import { AuthGuard } from "../components/AuthGuard";
 import PublicTreeAccess from "../components/PublicTreeAccess";
+import DeviceControlCenter from "../components/DeviceControlCenter";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -52,12 +53,12 @@ const GAUGE_RANGES = {
 } as const;
 
 /* ── Animated Semicircle Gauge ── */
-function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint }: {
+function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, noSignal = false }: {
   value: number; min: number; max: number; label: string; unit: string;
-  color: string; icon: ReactNode; delay?: number; tint: string;
+  color: string; icon: ReactNode; delay?: number; tint: string; noSignal?: boolean;
 }) {
   const pct = clamp01((value - min) / (max - min));
-  const valueText = String(value);
+  const valueText = noSignal ? "No signal" : String(value);
   const valueChars = valueText.length;
   const valueFontSize = Math.max(22, 58 - Math.max(0, valueChars - 4) * 6);
   const valueTextLength = valueChars >= 9 ? 144 : valueChars >= 8 ? 152 : valueChars >= 7 ? 160 : undefined;
@@ -110,14 +111,14 @@ function SemiGauge({ value, min, max, label, unit, color, icon, delay = 0, tint 
             textAnchor="middle"
             style={{ fill: "var(--text-2)" }}
             fontWeight="400"
-            fontSize={valueFontSize}
+            fontSize={noSignal ? 20 : valueFontSize}
             fontFamily="inherit"
             lengthAdjust="spacingAndGlyphs"
-            textLength={valueTextLength}
+            textLength={noSignal ? undefined : valueTextLength}
           >
             {valueText}
           </text>
-          <text x="110" y="138" textAnchor="middle" style={{ fill: "var(--text-3)" }} fontWeight="600" fontSize="16" fontFamily="inherit">{unit}</text>
+          <text x="110" y="138" textAnchor="middle" style={{ fill: "var(--text-3)" }} fontWeight="600" fontSize="16" fontFamily="inherit">{noSignal ? "" : unit}</text>
         </svg>
       </div>
       <div className="flex items-center" style={{ gap: 8, marginTop: 6, flexShrink: 0 }}>
@@ -1244,12 +1245,10 @@ function DashboardPageContent() {
     { id: "algae", label: "Algae System" },
     { id: "settings", label: "System Info" },
   ];
-  const treeOffline = d.location !== "Loading..." && !d.networkUp;
   const dashboardAvailableHeight = Math.max(0, viewport.height - viewport.edgeGap * 2);
   const dashboardScale = Math.max(
     0.01,
     Math.min(
-      1,
       viewport.width / DASH_BASE_WIDTH,
       dashboardAvailableHeight / DASH_BASE_HEIGHT,
     ),
@@ -1295,7 +1294,7 @@ function DashboardPageContent() {
 
       <div
         style={{
-          ...(treeOffline ? offlineContentStyle : dashboardContentStyle),
+          ...dashboardContentStyle,
           ...dashboardContentScaleStyle,
         }}
       >
@@ -1412,7 +1411,38 @@ function DashboardPageContent() {
           ))}
         </div>
 
-        <div className="flex items-center" style={{ gap: 14 }}>
+        <div className="flex items-center" style={{ gap: 10 }}>
+          {d.location !== "Loading..." && (
+            <span
+              className="font-bold uppercase tracking-wider"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 10px",
+                borderRadius: 999,
+                fontSize: 9,
+                whiteSpace: "nowrap",
+                color: d.device.status === "online" ? "#16a34a" : "#c2410c",
+                background: d.device.status === "online"
+                  ? "rgba(34,197,94,.1)"
+                  : "rgba(249,115,22,.1)",
+                border: `1px solid ${d.device.status === "online" ? "rgba(34,197,94,.18)" : "rgba(249,115,22,.22)"}`,
+              }}
+              title={d.networkUp ? d.device.statusLabel : "Offline · stored readings remain visible; controls are disabled"}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: d.device.status === "online" ? "#22c55e" : "#f97316",
+                }}
+              />
+              {d.device.statusLabel}
+            </span>
+          )}
           <DashboardClock />
         </div>
       </motion.nav>
@@ -1559,9 +1589,9 @@ function DashboardPageContent() {
                 </div>
               </motion.div>
 
-              <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.43A2 2 0 0 1 14 9.53V2" /><path d="M8.5 2h7" /></svg>} label="pH Level" value={d.ph} unit="pH" min={GAUGE_RANGES.bioReactor.ph.min} max={GAUGE_RANGES.bioReactor.ph.max} color="#4ade80" delay={0.2} tint="rgba(34,197,94,0.04)" />
-              <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" /></svg>} label="TDS" value={d.tds} unit="ppm" min={GAUGE_RANGES.bioReactor.tds.min} max={GAUGE_RANGES.bioReactor.tds.max} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
-              <SemiGauge icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" /></svg>} label="Temperature" value={d.temp} unit="°C" min={GAUGE_RANGES.bioReactor.temperature.min} max={GAUGE_RANGES.bioReactor.temperature.max} color="#f97316" delay={0.4} tint="rgba(249,115,22,0.04)" />
+              <SemiGauge noSignal={!d.device.hasSensors || d.ph === 0} icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4ade80" strokeWidth="2" strokeLinecap="round"><path d="M10 2v7.53a2 2 0 0 1-.21.9L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14.21 10.43A2 2 0 0 1 14 9.53V2" /><path d="M8.5 2h7" /></svg>} label="pH Level" value={d.ph} unit="pH" min={GAUGE_RANGES.bioReactor.ph.min} max={GAUGE_RANGES.bioReactor.ph.max} color="#4ade80" delay={0.2} tint="rgba(34,197,94,0.04)" />
+              <SemiGauge noSignal={!d.device.hasSensors || d.tds === 0} icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" /></svg>} label="TDS" value={d.tds} unit="ppm" min={GAUGE_RANGES.bioReactor.tds.min} max={GAUGE_RANGES.bioReactor.tds.max} color="#38bdf8" delay={0.3} tint="rgba(56,189,248,0.04)" />
+              <SemiGauge noSignal={!d.device.hasSensors || d.temp === 0} icon={<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" /></svg>} label="Temperature" value={d.temp} unit="°C" min={GAUGE_RANGES.bioReactor.temperature.min} max={GAUGE_RANGES.bioReactor.temperature.max} color="#f97316" delay={0.4} tint="rgba(249,115,22,0.04)" />
 
               {/* Biomass + Growth */}
               <motion.div className="card flex flex-col" style={{ padding: 28, background: "var(--surface)", ['--card-tint' as React.CSSProperties & string]: 'rgba(34,197,94,0.12)' } as React.CSSProperties} variants={rise}>
@@ -1617,14 +1647,19 @@ function DashboardPageContent() {
                     </div>
                     <span className="font-bold" style={{ fontSize: 18 }}>Environment</span>
                   </div>
-                  <Badge label="Normal" />
+                  <Badge label={d.device.hasSensors ? "Live sensors" : "Estimated"} color={d.device.hasSensors ? "green" : "orange"} />
                 </div>
                 <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative", paddingTop: 8 }}>
-                  <AQIGauge value={+d.airQuality} />
+                  {d.device.hasSensors ? <AQIGauge value={+d.airQuality || 1} /> : (
+                    <div style={{ maxWidth: 320, textAlign: "center", padding: 24 }}>
+                      <p style={{ fontSize: 18, fontWeight: 900, color: "var(--text-1)" }}>No onboard sensors</p>
+                      <p style={{ marginTop: 8, fontSize: 12, lineHeight: 1.55, color: "var(--text-3)", fontWeight: 600 }}>This Home AlgaeTree estimates CO₂ captured and O₂ released from its 30-day growth cycle.</p>
+                    </div>
+                  )}
                 </div>
                 {/* Env mini stats */}
                 <div className="grid grid-cols-3" style={{ gap: 10, marginTop: 16 }}>
-                  {[{ l: "ECO2", v: `${d.eco2} ppm` }, { l: "CO2", v: `${d.co2Ambient} ppm` }, { l: "TVOC", v: `${d.tvoc}` }].map(s => (
+                  {[{ l: "CO₂", v: d.co2Ambient === 0 ? "No signal" : `${d.co2Ambient} ppm` }, { l: "PM2.5", v: d.pm2 === 0 ? "No signal" : `${d.pm2} µg/m³` }, { l: "PM10", v: d.pm10 === 0 ? "No signal" : `${d.pm10} µg/m³` }].map(s => (
                     <div key={s.l} className="rounded-xl" style={{ padding: "14px 16px", background: "var(--mini-bg)" }}>
                       <p className="font-semibold uppercase tracking-wider" style={{ fontSize: 9, color: "var(--text-3)" }}>{s.l}</p>
                       <p className="font-bold" style={{ fontSize: 13, marginTop: 4, lineHeight: 1.2, overflowWrap: "anywhere" }}>{s.v}</p>
@@ -1706,6 +1741,7 @@ function DashboardPageContent() {
                       src="/Performance.png"
                       alt="Performance module"
                       fill
+                      sizes="34vw"
                       className="object-contain"
                       style={{
                         filter: "drop-shadow(0 24px 48px rgba(168,85,247,0.18))",
@@ -1959,9 +1995,12 @@ function DashboardPageContent() {
                     <div className="rounded-2xl flex items-center justify-center" style={{ width: 48, height: 48, background: "rgba(251,191,36,0.1)" }}>
                       <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><path d="M6 6h.01M6 18h.01" /></svg>
                     </div>
-                    <span className="font-bold" style={{ fontSize: 18 }}>System Health</span>
+                    <div>
+                      <span className="font-bold" style={{ display: "block", fontSize: 18 }}>System Health</span>
+                      <span style={{ display: "block", marginTop: 2, fontSize: 10, color: "var(--text-3)", fontWeight: 700 }}>{d.device.modelLabel} · {d.device.siteName}</span>
+                    </div>
                   </div>
-                  <Badge label={d.networkUp ? "Online" : "Offline"} color={d.networkUp ? "green" : "orange"} />
+                  <Badge label={d.device.statusLabel} color={d.device.status === "online" ? "green" : "orange"} />
                 </div>
                 <div className="flex-1 flex flex-col items-center justify-center dash-tree-section" style={{ position: "relative", overflow: "hidden", marginTop: 4 }}>
                   {(() => {
@@ -1994,6 +2033,7 @@ function DashboardPageContent() {
                             src="/System Final.png"
                             alt="System module"
                             fill
+                            sizes="34vw"
                             className="object-contain"
                             style={{
                               filter: "drop-shadow(0 24px 48px rgba(251,191,36,0.2))",
@@ -2135,6 +2175,8 @@ function DashboardPageContent() {
                 } as React.CSSProperties}
                 variants={rise}
               >
+                <DeviceControlCenter data={d} />
+                {false && (<>
                 {controlBusy && (
                   <div
                     style={{
@@ -2554,6 +2596,7 @@ function DashboardPageContent() {
                     </div>
                   )}
                 </div>
+                </>)}
 
               </motion.div>
             </>
@@ -2588,10 +2631,10 @@ function DashboardPageContent() {
               { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" /></svg>, l: "CO2", v: `${selectedCycle?.co2Captured ?? 0} kg`, bg: "rgba(249,115,22,0.12)" },
               { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2" /></svg>, l: "O2", v: `${selectedCycle?.o2Released ?? 0} kg`, bg: "rgba(56,189,248,0.12)" },
             ] : [
-              { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 9h6v6H9z" /></svg>, l: "CPU Temp", v: `${d.cpuTemp}°C`, bg: "rgba(249,115,22,0.12)" },
-              { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 9h6v6H9z" /></svg>, l: "CPU Usage", v: `${d.cpuUsage}%`, bg: "rgba(56,189,248,0.12)" },
-              { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>, l: "Memory", v: `${d.memUsage}%`, bg: "rgba(168,85,247,0.12)" },
-              { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><path d="M6 6h.01M6 18h.01" /></svg>, l: "Disk", v: `${d.diskUsage}%`, bg: "rgba(251,191,36,0.12)" },
+              { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round"><path d="M6 7h12v10H6z"/><path d="M9 3v4M15 3v4"/></svg>, l: "Battery", v: `${d.batteryPercentage}%`, bg: "rgba(249,115,22,0.12)" },
+              { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>, l: "Growth cycle", v: d.harvestDue ? "Harvest due" : `Day ${d.cycleDay} / 30`, bg: "rgba(56,189,248,0.12)" },
+              { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"><path d="M4 12h16M12 4v16"/><circle cx="12" cy="12" r="9"/></svg>, l: "Sensors", v: d.device.hasSensors ? `${d.device.sensorKeys.length} live keys` : "Estimated yield", bg: "rgba(168,85,247,0.12)" },
+              { icon: <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"><path d="M20 6 9 17l-5-5"/></svg>, l: "Command", v: d.change === 0 ? "Ready" : `Pending ${d.change}`, bg: "rgba(251,191,36,0.12)" },
             ]).map(s => (
               <div key={s.l} className="flex items-center dash-footer-stat" style={{ gap: 14 }}>
                 <div
@@ -2609,46 +2652,6 @@ function DashboardPageContent() {
       </AnimatePresence>
       </div>
 
-      {treeOffline && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          style={offlineOverlayStyle}
-        >
-          <div style={offlinePanelStyle}>
-            <div style={offlineIconStyle}>
-              <svg width="34" height="34" fill="none" viewBox="0 0 24 24" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 9v4" />
-                <path d="M12 17h.01" />
-                <path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0Z" />
-              </svg>
-            </div>
-            <p style={offlineTitleStyle}>Tree is offline</p>
-            <p style={offlineCopyStyle}>
-              This dashboard is paused because the selected AlgaeTree is not reporting live data.
-            </p>
-            <p style={offlineMetaStyle}>Last online: {d.lastOnline}</p>
-            <div style={offlineActionsStyle}>
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                style={offlineButtonStyle}
-              >
-                Check connection
-              </button>
-              {!shareKey && (
-              <button
-                type="button"
-                onClick={() => router.push(dashboardHomePath)}
-                style={offlineSecondaryButtonStyle}
-              >
-                Go to dashboard
-              </button>
-              )}
-            </div>
-          </div>
-        </motion.div>
-      )}
     </div>
   );
 }
@@ -2675,92 +2678,6 @@ const dashboardHeaderFadeStyle: React.CSSProperties = {
   WebkitBackdropFilter: "blur(10px)",
   maskImage: "linear-gradient(180deg, #000 0%, #000 58%, transparent 100%)",
   WebkitMaskImage: "linear-gradient(180deg, #000 0%, #000 58%, transparent 100%)",
-};
-
-const offlineContentStyle: React.CSSProperties = {
-  ...dashboardContentStyle,
-  filter: "grayscale(1) blur(2px)",
-  opacity: 0.42,
-  pointerEvents: "none",
-};
-
-const offlineOverlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  zIndex: 160,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 24,
-  background: "color-mix(in srgb, var(--bg) 32%, transparent)",
-  backdropFilter: "blur(10px)",
-  WebkitBackdropFilter: "blur(10px)",
-};
-
-const offlinePanelStyle: React.CSSProperties = {
-  width: "min(100%, 420px)",
-  borderRadius: 24,
-  border: "1px solid rgba(249,115,22,0.24)",
-  background: "var(--surface)",
-  boxShadow: "0 24px 80px rgba(15,23,42,0.22)",
-  padding: "30px 28px",
-  textAlign: "center",
-};
-
-const offlineIconStyle: React.CSSProperties = {
-  width: 70,
-  height: 70,
-  margin: "0 auto 18px",
-  borderRadius: 24,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "rgba(249,115,22,0.12)",
-};
-
-const offlineTitleStyle: React.CSSProperties = {
-  color: "#0f172a",
-  fontSize: 26,
-  fontWeight: 900,
-};
-
-const offlineCopyStyle: React.CSSProperties = {
-  marginTop: 10,
-  color: "#475569",
-  fontSize: 14,
-  fontWeight: 600,
-  lineHeight: 1.6,
-};
-
-const offlineMetaStyle: React.CSSProperties = {
-  marginTop: 14,
-  color: "#64748b",
-  fontSize: 13,
-  fontWeight: 700,
-};
-
-const offlineActionsStyle: React.CSSProperties = {
-  marginTop: 22,
-  display: "flex",
-  flexWrap: "wrap",
-  justifyContent: "center",
-  gap: 12,
-};
-
-const offlineButtonStyle: React.CSSProperties = {
-  border: "none",
-  borderRadius: 999,
-  padding: "12px 18px",
-  background: "linear-gradient(135deg,#f97316,#ea580c)",
-  color: "#fff",
-  fontSize: 14,
-  fontWeight: 900,
-  cursor: "pointer",
-};
-
-const offlineSecondaryButtonStyle: React.CSSProperties = {
-  ...offlineButtonStyle,
-  background: "#0f172a",
 };
 
 export default function DashboardPage() {
